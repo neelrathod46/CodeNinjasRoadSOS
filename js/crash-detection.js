@@ -1,18 +1,17 @@
 const CrashDetection = {
-  threshold: 25, // m/s² 
+  threshold: 25, 
   enabled: true,
   lastAlert: 0,
   _motionListener: null,
 
   start() {
-    this.enabled = Storage.getSettings().detectionOn;
+    const settings = Storage.getSettings();
+    this.enabled = settings.detectionOn;
+    this.threshold = Number(settings.sensitivity || 25);
+    
     if (!this.enabled) return;
-    if (!window.DeviceMotionEvent) {
-      this._displayStatusText("No sensor hardware");
-      return;
-    }
+    if (!window.DeviceMotionEvent) return;
 
-    // Clean up old event listener bounds if running repeatedly
     if (this._motionListener) {
       window.removeEventListener('devicemotion', this._motionListener);
     }
@@ -24,24 +23,23 @@ const CrashDetection = {
   handleMotion(e) {
     if (!this.enabled) return;
 
-    // Use e.acceleration (linear acceleration without gravity baseline)
-    // If unavailable, fall back to gravity vectors minus the earth baseline constants
     let a = e.acceleration;
     let mag = 0;
 
+    // Use pure user acceleration if available
     if (a && a.x !== null) {
       mag = Math.sqrt(a.x**2 + a.y**2 + a.z**2);
     } else {
+      // Fallback: Isolate static gravity (~9.8 m/s²) from total acceleration vector
       a = e.accelerationIncludingGravity;
       if (a && a.x !== null) {
         const totalForce = Math.sqrt(a.x**2 + a.y**2 + a.z**2);
-        mag = Math.max(0, totalForce - 9.8); // Offset 1G flat rest vector
+        mag = Math.max(0, totalForce - 9.8);
       }
     }
 
     this._updateUI(mag);
 
-    // Evaluate crash threshold
     if (mag > this.threshold && Date.now() - this.lastAlert > 10000) {
       this.lastAlert = Date.now();
       App.showSOS('auto');
@@ -50,13 +48,9 @@ const CrashDetection = {
 
   simulateSpike() {
     if (!this.enabled) return;
-    
-    // Animate a high-speed crash impact spike numbers onto the UI
-    this._updateUI(34.2);
-    
+    this._updateUI(this.threshold + 10);
     setTimeout(() => {
       App.showSOS('auto');
-      // Calm sensor back down after event triggers
       this._updateUI(0.0);
     }, 400);
   },
@@ -75,17 +69,7 @@ const CrashDetection = {
     const el = document.getElementById('live-accel');
     if (el) {
       el.textContent = `${magnitude.toFixed(1)} m/s²`;
-      // Dynamically highlight high readings to red during live demonstrations
-      if (magnitude > 12) {
-        el.style.color = 'var(--red)';
-      } else {
-        el.style.color = 'var(--green)';
-      }
+      el.style.color = magnitude > 15 ? 'var(--red)' : 'var(--green)';
     }
-  },
-
-  _displayStatusText(text) {
-    const container = document.getElementById('detection-status-text');
-    if (container) container.textContent = text;
   }
 };

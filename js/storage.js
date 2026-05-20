@@ -12,7 +12,7 @@ const Storage = {
     return this.get('contacts') || [];
   },
   getSettings() {
-    return this.get('settings') || { sosNumber: '0000000000', countdownSecs: 10, detectionOn: true };
+    return this.get('settings') || { sosNumber: '911', countdownSecs: 10, detectionOn: true, sensitivity: 25 };
   },
   getLocation() {
     return this.get('last_location') || null;
