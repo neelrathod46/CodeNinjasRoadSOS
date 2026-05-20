@@ -212,23 +212,7 @@ const App = {
       </div>
     `;
 
-    NearbyServices.fetch(loc.lat, loc.lng).then(services => {
-      const filtered = filterType ? services.filter(s => s.type === filterType) : services;
-      const icons = { hospital: '🏥', police: '🚔', repair: '🔧' };
-
-      document.getElementById('services-list').innerHTML = filtered.map(s => `
-        <div class="card" style="margin-bottom:12px;display:flex;align-items:center;gap:14px;background:var(--surface);padding:14px;border-radius:12px;border:1px solid var(--border);">
-          <div style="font-size:28px;">${icons[s.type] || '📍'}</div>
-          <div style="flex:1;min-width:0;">
-            <div style="font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.name}</div>
-            <div style="font-size:13px;color:var(--text-muted);margin-top:2px;">${s.distLabel} away</div>
-          </div>
-          <a href="${s.phone ? `tel:${s.phone}` : '#'}" class="btn btn-md btn-blue" style="width:auto;padding:8px 14px;border-radius:8px;">
-            ${s.phone ? 'Call' : 'View'}
-          </a>
-        </div>
-      `).join('');
-    });
+      
   },
 
   renderMedical() {
@@ -240,7 +224,7 @@ const App = {
         <span></span>
       </div>
       <div style="padding:0 20px;flex:1;overflow-y:auto;">
-        ${['name:Full name', 'blood:Blood type', 'allergies:Allergies'].map(pair => {
+        ${['name:Full name', 'blood:Blood type', 'allergies:Allergies', 'conditions:Medical Conditions'].map(pair => {
           const [key, label] = pair.split(':');
           return `
             <div style="margin-bottom:16px;">
@@ -253,7 +237,7 @@ const App = {
       </div>
     `;
   },
-
+  
   _saveMedical(input) {
     const m = Storage.getMedicalID();
     m[input.dataset.key] = input.value;
@@ -358,7 +342,84 @@ const App = {
     const { outcome } = await this.deferredPrompt.userChoice;
     if (outcome === 'accepted') console.log('PWA Accepted');
     this.deferredPrompt = null;
-  }
+  },
+
+  // Add these functions inside your App object in app.js
+
+  renderChat() {
+    document.getElementById('screen-chat').innerHTML = `
+      <div class="status-bar">
+        <button onclick="App.back()" style="background:none;border:none;color:var(--text-muted);font-size:14px;cursor:pointer;">← Back</button>
+        <span style="font-weight:600;">Offline AI Assistant</span>
+        <span></span>
+      </div>
+      <div class="chat-container">
+        <div class="chat-messages" id="chat-messages">
+          <div class="msg msg-bot">I am your offline emergency assistant. Ask me for first aid instructions (CPR, bleeding, burns) or to find a nearby hospital, police, or mechanic.</div>
+        </div>
+        <div class="chat-chips">
+          <div class="chip" onclick="document.getElementById('chat-input').value='How to do CPR?'; App._sendChat()">How to do CPR?</div>
+          <div class="chip" onclick="document.getElementById('chat-input').value='Find nearby hospital'; App._sendChat()">Find nearby hospital</div>
+          <div class="chip" onclick="document.getElementById('chat-input').value='Stop severe bleeding'; App._sendChat()">Stop severe bleeding</div>
+        </div>
+        <div class="chat-input-wrap">
+          <input type="text" id="chat-input" class="chat-input" placeholder="Type your emergency..." onkeypress="if(event.key === 'Enter') App._sendChat()">
+          <button class="btn-send" onclick="App._sendChat()">Send</button>
+        </div>
+      </div>
+    `;
+  },
+
+  async _sendChat() {
+    const inputEl = document.getElementById('chat-input');
+    const text = inputEl.value.trim();
+    if (!text) return;
+    
+    const msgContainer = document.getElementById('chat-messages');
+    
+    // Add user message
+    msgContainer.innerHTML += `<div class="msg msg-user">${text}</div>`;
+    inputEl.value = '';
+    msgContainer.scrollTop = msgContainer.scrollHeight;
+
+    // Simulate AI thinking delay
+    setTimeout(async () => {
+      let response = this._processOfflineAI(text.toLowerCase());
+      
+      // If AI detects a request for locations, fetch them dynamically
+      if (response === 'FETCH_HOSPITALS') {
+         const loc = Geo.get() || { lat: 0, lng: 0 };
+         const services = await NearbyServices.fetch(loc.lat, loc.lng);
+         const hospitals = services.filter(s => s.type === 'hospital').slice(0, 2);
+         if (hospitals.length > 0) {
+            response = "Here are the closest medical facilities:<br><br>" + hospitals.map(h => 
+              `<b>${h.name}</b> (${h.distLabel} away)<br><a href="https://www.google.com/maps/dir/?api=1&destination=${h.lat},${h.lng}" target="_blank" style="color:var(--blue);">Get Directions</a>`
+            ).join('<br><br>');
+         } else {
+            response = "I couldn't locate hospitals nearby. Please trigger the SOS button immediately.";
+         }
+      }
+
+      msgContainer.innerHTML += `<div class="msg msg-bot">${response}</div>`;
+      msgContainer.scrollTop = msgContainer.scrollHeight;
+    }, 600);
+  },
+
+  _processOfflineAI(query) {
+    if (query.includes('cpr') || query.includes('heart')) {
+      return "<b>CPR Instructions:</b><br>1. Check if the scene is safe.<br>2. Call emergency services.<br>3. Push hard and fast in the center of the chest (100-120 pushes a minute).<br>4. Allow chest to come back up to its normal position after each push.";
+    }
+    if (query.includes('bleed') || query.includes('cut') || query.includes('blood')) {
+      return "<b>Severe Bleeding:</b><br>1. Apply firm, direct pressure to the wound with a clean cloth.<br>2. Keep pressing hard until help arrives.<br>3. If blood soaks through, add more cloth on top—do NOT remove the first layer.";
+    }
+    if (query.includes('burn') || query.includes('fire')) {
+      return "<b>Burns:</b><br>1. Cool the burn under cool (not cold) running water for at least 10 minutes.<br>2. Remove tight items from the burned area.<br>3. Cover loosely with a clean, non-stick dressing.";
+    }
+    if (query.includes('hospital') || query.includes('doctor') || query.includes('clinic')) {
+      return 'FETCH_HOSPITALS';
+    }
+    return "I am an offline AI. I can assist with first aid (CPR, burns, bleeding) or finding nearby services. If this is a life-threatening emergency, please use the SOS button immediately.";
+  },
 };
 
 document.addEventListener('DOMContentLoaded', () => App.init());
