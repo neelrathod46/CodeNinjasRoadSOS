@@ -1,18 +1,37 @@
 const App = {
   history: [],
+  deferredPrompt: null, // Track installation request payload
 
   init() {
     Geo.start();
     CrashDetection.start();
     this.renderHome();
     this.show('home');
+    
+    // Capture the PWA install event trigger
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      this.deferredPrompt = e; // Store event payload
+      
+      // If user is currently sitting on settings screen, update UI instantly to reveal button
+      const installBtn = document.getElementById('pwa-install-btn');
+      if (installBtn) installBtn.style.display = 'block';
+    });
 
-    // Request device motion permission on iOS
-    if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
-      document.addEventListener('click', async () => {
-        await DeviceMotionEvent.requestPermission().catch(() => {});
-      }, { once: true });
-    }
+    // Request device motion permissions cleanly on user interaction
+    document.addEventListener('click', async () => {
+      if (typeof DeviceMotionEvent !== 'undefined' && typeof DeviceMotionEvent.requestPermission === 'function') {
+        try {
+          const permissionState = await DeviceMotionEvent.requestPermission();
+          if (permissionState === 'granted') {
+            // Re-initialize listener once permission is unlocked
+            CrashDetection.start(); 
+          }
+        } catch (err) {
+          console.warn("DeviceMotion permissions deferred/denied:", err);
+        }
+      }
+    }, { once: true });
   },
 
   show(screenName, pushHistory = true) {
@@ -101,12 +120,17 @@ const App = {
         </div>
       </div>
 
-      <div class="detection-bar">
+      <div class="detection-bar" style="cursor: pointer;" onclick="CrashDetection.simulateSpike()">
         <div class="detection-text">
-          <div class="detection-title">Crash detection</div>
-          <div class="detection-sub">${settings.detectionOn ? 'Monitoring accelerometer' : 'Currently off'}</div>
+          <div class="detection-title">Crash detection (Sensor)</div>
+          <div class="detection-sub" id="detection-status-text">
+            ${settings.detectionOn ? 'Live Force: <span id="live-accel" style="color:var(--green); font-weight:700;">0.0 m/s²</span>' : 'Currently off'}
+          </div>
         </div>
-        <button class="toggle ${settings.detectionOn ? '' : 'off'}" id="detection-toggle" onclick="App.toggleDetection()"></button>
+        <button class="toggle ${settings.detectionOn ? '' : 'off'}" id="detection-toggle" onclick="event.stopPropagation(); App.toggleDetection()"></button>
+      </div>
+      <div style="text-align: center; font-size: 11px; color: var(--text-muted); margin-top: -16px; margin-bottom: 20px;">
+         💡 Hackathon Tip: Tap the sensor bar to simulate a high-speed vehicle impact crash.
       </div>
     `;
   },
@@ -123,7 +147,6 @@ const App = {
     const settings = Storage.getSettings();
     const contacts = Storage.getContacts();
     const loc = Geo.get();
-    const locText = loc ? `${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}` : 'unknown location';
     const sosNumber = settings.sosNumber || '0000000000';
     let count = settings.countdownSecs || 10;
     let interval;
@@ -154,7 +177,6 @@ const App = {
       </div>
     `;
 
-    // start countdown
     interval = setInterval(() => {
       count--;
       const el = document.getElementById('sos-count');
@@ -167,7 +189,6 @@ const App = {
       }
     }, 1000);
 
-    // store interval so cancel can clear it
     window._sosInterval = interval;
   },
 
@@ -177,7 +198,6 @@ const App = {
     const loc = Geo.get();
     const locText = loc ? `${loc.lat.toFixed(5)}, ${loc.lng.toFixed(5)}` : 'unknown location';
     const msg = `EMERGENCY: I've been in a crash. My location: ${locText}. Please help or call emergency services.`;
-    // SMS each contact via sms: link (opens native SMS, works offline)
     contacts.forEach((c, i) => {
       setTimeout(() => {
         window.open(`sms:${c.number}?body=${encodeURIComponent(msg)}`, '_blank');
@@ -229,7 +249,7 @@ const App = {
           <div style="font-size:28px;flex-shrink:0;">${icons[s.type]}</div>
           <div style="flex:1;min-width:0;">
             <div style="font-weight:600;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">${s.name}</div>
-            <div style="font-size:13px;color:var(--text-muted);margin-top:2px;">${labels[s.type]} · ${(s.dist * 1000).toFixed(0)}m away</div>
+            <div style="font-size:13px;color:var(--text-muted);margin-top:2px;">${labels[s.type]} · ${s.distLabel} away</div>
           </div>
           ${s.phone ? `<a href="tel:${s.phone}" class="btn btn-md btn-red" style="width:auto;padding:0 16px;flex-shrink:0;">Call</a>` : `<a href="https://maps.google.com/?q=${s.lat},${s.lng}" target="_blank" class="btn btn-md btn-ghost" style="width:auto;padding:0 16px;flex-shrink:0;">Map</a>`}
         </div>
@@ -319,6 +339,11 @@ const App = {
         <span></span>
       </div>
       <div style="padding:0 20px;flex:1;overflow-y:auto;">
+        <div id="pwa-install-btn" style="display: ${this.deferredPrompt ? 'block' : 'none'}; margin-bottom: 24px;">
+          <button class="btn btn-lg btn-green" onclick="App.triggerPWAInstall()" style="width:100%; font-weight:700;">
+            📲 Install CrashSafe App to Phone
+          </button>
+        </div>
         <div style="margin-bottom:16px;">
           <label style="font-size:13px;color:var(--text-muted);display:block;margin-bottom:6px;">Emergency SOS number</label>
           <input type="tel" value="${s.sosNumber}" id="sos-number-input"
@@ -340,6 +365,17 @@ const App = {
     s.countdownSecs = parseInt(document.getElementById('countdown-input').value);
     Storage.set('settings', s);
     alert('Settings saved');
+  },
+  async triggerPWAInstall() {
+    if (!this.deferredPrompt) return;
+    this.deferredPrompt.prompt(); // Trigger prompt dialog execution windows
+    const { outcome } = await this.deferredPrompt.userChoice;
+    if (outcome== 'accepted') {
+      console.log('User pinned web application to phone dashboard target.');
+    }
+    this.deferredPrompt = null;
+    const btn = document.getElementById('pwa-install-btn');
+    if (btn) btn.style.display = 'none';
   }
 };
 
