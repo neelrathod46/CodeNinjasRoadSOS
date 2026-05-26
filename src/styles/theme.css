@@ -1,153 +1,87 @@
-/* ─── Amelia Theme ────────────────────────────────────────────────────────── */
 
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* ── Core ── */
   --font-size: 16px;
-  --font-family: 'Poppins', sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
-
-  /* ── Amelia Brand Palette ── */
-  --amelia-brown: rgb(109, 67, 0);
-  --amelia-brown-light: rgba(109, 67, 0, 0.15);
-  --amelia-brown-glow: rgba(109, 67, 0, 0.4);
-  --amelia-peach: rgb(254, 215, 173);
-  --amelia-peach-light: rgba(254, 215, 173, 0.4);
-
-  /* ── Surface Colors ── */
-  --background: linear-gradient(to right, rgb(255, 255, 255), rgb(254, 215, 173));
-  --background-solid: #fffaf4;
+  --font-family: 'Inter', system-ui, sans-serif;
+  --background: #f8f8f6;
   --foreground: #111111;
-
-  --card: rgba(255, 255, 255, 0.85);
+  --card: #ffffff;
   --card-foreground: #111111;
-
   --popover: #ffffff;
   --popover-foreground: #111111;
-
-  /* ── Brand / Primary ── */
-  --primary: rgb(109, 67, 0);
+  --primary: #d42b2b;
   --primary-foreground: #ffffff;
-  --primary-glow: 0 0 10px rgb(109, 67, 0);
-  --primary-glow-lg: 0 0 40px rgb(109, 67, 0);
-
-  /* ── Secondary / Neutral ── */
-  --secondary: rgba(254, 215, 173, 0.35);
+  --secondary: #f0f0ee;
   --secondary-foreground: #111111;
-
-  --muted: rgba(254, 215, 173, 0.5);
-  --muted-foreground: #6b5a4a;
-
-  /* ── Accent ── */
-  --accent: rgba(254, 215, 173, 0.6);
-  --accent-foreground: rgb(109, 67, 0);
-
-  /* ── Semantic ── */
+  --muted: #e8e8e5;
+  --muted-foreground: #6b6b68;
+  --accent: #fff0f0;
+  --accent-foreground: #d42b2b;
   --destructive: #b91c1c;
   --destructive-foreground: #ffffff;
-  --success: #166534;
-  --success-foreground: #ffffff;
-
-  /* ── Border / Input ── */
-  --border: rgba(109, 67, 0, 0.15);
+  --border: rgba(0, 0, 0, 0.1);
   --input: transparent;
-  --input-background: rgba(255, 255, 255, 0.8);
-  --switch-background: rgb(214, 178, 140);
-
-  /* ── Font Weights ── */
+  --input-background: #f0f0ee;
+  --switch-background: #cbced4;
   --font-weight-medium: 500;
   --font-weight-normal: 400;
-  --font-weight-bold: 600;
-
-  /* ── Ring ── */
-  --ring: rgb(109, 67, 0);
-
-  /* ── Charts (warm Amelia palette) ── */
-  --chart-1: rgb(109, 67, 0);        /* deep brown */
-  --chart-2: rgb(184, 115, 51);      /* warm amber */
-  --chart-3: rgb(214, 158, 89);      /* light caramel */
-  --chart-4: rgb(254, 215, 173);     /* peach */
-  --chart-5: rgb(139, 90, 43);       /* mid brown */
-
-  /* ── Radius ── */
+  --ring: #d42b2b;
+  --chart-1: oklch(0.646 0.222 41.116);
+  --chart-2: oklch(0.6 0.118 184.704);
+  --chart-3: oklch(0.398 0.07 227.392);
+  --chart-4: oklch(0.828 0.189 84.429);
+  --chart-5: oklch(0.769 0.188 70.08);
   --radius: 0.625rem;
-
-  /* ── Sidebar ── */
-  --sidebar: #fffaf4;
-  --sidebar-foreground: #111111;
-  --sidebar-primary: rgb(109, 67, 0);
-  --sidebar-primary-foreground: #ffffff;
-  --sidebar-accent: rgba(254, 215, 173, 0.4);
-  --sidebar-accent-foreground: rgb(109, 67, 0);
-  --sidebar-border: rgba(109, 67, 0, 0.12);
-  --sidebar-ring: rgb(109, 67, 0);
-
-  /* ── Nav ── */
-  --nav-height: 10vh;
-  --nav-bg: rgba(255, 255, 255, 0.85);
-  --nav-backdrop: blur(8px);
+  --sidebar: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.145 0 0);
+  --sidebar-primary: #030213;
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.97 0 0);
+  --sidebar-accent-foreground: oklch(0.205 0 0);
+  --sidebar-border: oklch(0.922 0 0);
+  --sidebar-ring: oklch(0.708 0 0);
 }
-
-/* ─── Dark Mode ───────────────────────────────────────────────────────────── */
 
 .dark {
-  --background: linear-gradient(to right, #1a0f00, #2d1a00);
-  --background-solid: #1a0f00;
-  --foreground: #f5ede3;
-
-  --card: rgba(45, 26, 0, 0.9);
-  --card-foreground: #f5ede3;
-
-  --popover: #2d1a00;
-  --popover-foreground: #f5ede3;
-
-  --primary: rgb(214, 158, 89);
-  --primary-foreground: #1a0f00;
-  --primary-glow: 0 0 10px rgb(214, 158, 89);
-  --primary-glow-lg: 0 0 40px rgb(214, 158, 89);
-
-  --secondary: rgba(109, 67, 0, 0.35);
-  --secondary-foreground: #f5ede3;
-
-  --muted: rgba(109, 67, 0, 0.25);
-  --muted-foreground: #c9a87a;
-
-  --accent: rgba(109, 67, 0, 0.4);
-  --accent-foreground: rgb(254, 215, 173);
-
-  --destructive: #991b1b;
-  --destructive-foreground: #fca5a5;
-
-  --border: rgba(214, 158, 89, 0.2);
-  --input: rgba(109, 67, 0, 0.2);
-  --input-background: rgba(45, 26, 0, 0.8);
-  --switch-background: rgb(109, 67, 0);
-
-  --ring: rgb(214, 158, 89);
-
-  --chart-1: rgb(214, 158, 89);
-  --chart-2: rgb(254, 215, 173);
-  --chart-3: rgb(184, 115, 51);
-  --chart-4: rgb(139, 90, 43);
-  --chart-5: rgb(109, 67, 0);
-
-  --sidebar: #2d1a00;
-  --sidebar-foreground: #f5ede3;
-  --sidebar-primary: rgb(214, 158, 89);
-  --sidebar-primary-foreground: #1a0f00;
-  --sidebar-accent: rgba(109, 67, 0, 0.4);
-  --sidebar-accent-foreground: rgb(254, 215, 173);
-  --sidebar-border: rgba(214, 158, 89, 0.15);
-  --sidebar-ring: rgb(214, 158, 89);
-
-  --nav-bg: rgba(26, 15, 0, 0.9);
+  --background: oklch(0.145 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.145 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.145 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.985 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.396 0.141 25.723);
+  --destructive-foreground: oklch(0.637 0.237 25.331);
+  --border: oklch(0.269 0 0);
+  --input: oklch(0.269 0 0);
+  --ring: oklch(0.439 0 0);
+  --font-weight-medium: 500;
+  --font-weight-normal: 400;
+  --chart-1: oklch(0.488 0.243 264.376);
+  --chart-2: oklch(0.696 0.17 162.48);
+  --chart-3: oklch(0.769 0.188 70.08);
+  --chart-4: oklch(0.627 0.265 303.9);
+  --chart-5: oklch(0.645 0.246 16.439);
+  --sidebar: oklch(0.205 0 0);
+  --sidebar-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.488 0.243 264.376);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-accent: oklch(0.269 0 0);
+  --sidebar-accent-foreground: oklch(0.985 0 0);
+  --sidebar-border: oklch(0.269 0 0);
+  --sidebar-ring: oklch(0.439 0 0);
 }
 
-/* ─── Tailwind Theme Bridge ───────────────────────────────────────────────── */
-
 @theme inline {
-  --color-background: var(--background-solid);
+  --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
@@ -185,13 +119,7 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-
-  /* Amelia brand extensions */
-  --color-amelia-brown: var(--amelia-brown);
-  --color-amelia-peach: var(--amelia-peach);
 }
-
-/* ─── Base Layer ──────────────────────────────────────────────────────────── */
 
 @layer base {
   * {
@@ -199,60 +127,57 @@
   }
 
   body {
-    background: linear-gradient(to right, rgb(255, 255, 255), rgb(254, 215, 173));
-    color: var(--foreground);
-    font-family: var(--font-family);
+    @apply bg-background text-foreground;
   }
 
-  .dark body {
-    background: linear-gradient(to right, #1a0f00, #2d1a00);
-  }
+  /**
+  * Default typography styles for HTML elements (h1-h4, p, label, button, input).
+  * These are in @layer base, so Tailwind utility classes (like text-sm, text-lg) automatically override them.
+  */
 
   html {
     font-size: var(--font-size);
   }
 
-  /* ── Amelia Typewriter Animation ── */
-  .typewriter-text::before {
-    content: "Developer";
-    animation: amelia-words 15s infinite;
+  h1 {
+    font-size: var(--text-2xl);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
   }
 
-  .typewriter-text::after {
-    content: "";
-    position: absolute;
-    width: calc(100% + 8px);
-    height: 100%;
-    border-left: 3px solid black;
-    animation: amelia-cursor 0.6s linear infinite;
+  h2 {
+    font-size: var(--text-xl);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
   }
 
-  @keyframes amelia-cursor {
-    to {
-      border-left: 3px solid rgb(109, 67, 0);
-    }
+  h3 {
+    font-size: var(--text-lg);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
   }
 
-  @keyframes amelia-words {
-    0%,   33% { content: "Developer"; }
-    34%,  66% { content: "Designer"; }
-    67%, 100% { content: "Creator"; }
+  h4 {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
   }
 
-  /* ── Dropdown animation ── */
-  .dropdown-open {
-    transform: translateY(0) !important;
+  label {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
   }
 
-  /* ── Logo ── */
-  .logo-accent {
-    color: rgb(109, 67, 0);
-    text-shadow: 0 0 10px rgb(109, 67, 0);
+  button {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-medium);
+    line-height: 1.5;
   }
 
-  /* ── Section defaults ── */
-  section {
-    width: 100%;
-    min-height: 90vh;
+  input {
+    font-size: var(--text-base);
+    font-weight: var(--font-weight-normal);
+    line-height: 1.5;
   }
 }
