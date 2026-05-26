@@ -1,0 +1,144 @@
+/* ─── Amelia Global Reset ─────────────────────────────────────────────────── */
+
+* {
+  padding: 0;
+  margin: 0;
+  font-family: 'Poppins', sans-serif;
+  box-sizing: border-box;
+}
+
+html {
+  overflow-x: hidden;
+  font-size: var(--font-size);
+  scroll-behavior: smooth;
+}
+
+body {
+  width: 100%;
+  min-height: 100vh;
+  background: linear-gradient(to right, rgb(255, 255, 255), rgb(254, 215, 173));
+  color: var(--foreground);
+}
+
+/* ─── Typography ──────────────────────────────────────────────────────────── */
+
+h1 {
+  font-size: clamp(1.5rem, 2rem + 3vw, 3rem);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+h2 {
+  font-size: clamp(1.2rem, 1.5rem + 2vw, 2.2rem);
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+h3 {
+  font-size: clamp(1rem, 1rem + 1.5vw, 1.6rem);
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+h4 {
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+p {
+  font-size: clamp(0.8rem, 0.6rem + 1vw, 1rem);
+  font-weight: 400;
+  line-height: 1.7;
+  margin: 8px 0;
+}
+
+label {
+  font-size: 1rem;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+a {
+  position: relative;
+  color: black;
+  text-decoration: none;
+  font-weight: 500;
+  transition: color 0.3s linear;
+}
+
+a::before {
+  position: absolute;
+  content: "";
+  bottom: -3px;
+  left: 0;
+  width: 0%;
+  height: 3px;
+  background-color: rgb(109, 67, 0);
+  transition: 0.2s linear;
+}
+
+a:hover {
+  color: rgb(109, 67, 0);
+}
+
+a:hover::before {
+  width: 100%;
+}
+
+button {
+  font-family: 'Poppins', sans-serif;
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  background-color: rgb(109, 67, 0);
+  color: #ffffff;
+  border: 2px solid rgb(109, 67, 0);
+  border-radius: 5px;
+  padding: 8px 24px;
+  transition: 0.2s linear;
+}
+
+button:hover {
+  scale: 1.05;
+  color: rgb(109, 67, 0);
+  background-color: transparent;
+  box-shadow: 0 0 20px rgb(109, 67, 0);
+}
+
+input,
+textarea,
+select {
+  font-family: 'Poppins', sans-serif;
+  font-size: 1rem;
+  font-weight: 400;
+  line-height: 1.5;
+  background-color: var(--input-background);
+  border: 1.5px solid rgba(109, 67, 0, 0.3);
+  border-radius: 5px;
+  padding: 8px 14px;
+  outline: none;
+  transition: border-color 0.2s linear, box-shadow 0.2s linear;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  border-color: rgb(109, 67, 0);
+  box-shadow: 0 0 8px rgba(109, 67, 0, 0.3);
+}
+
+/* ─── Scrollbar ───────────────────────────────────────────────────────────── */
+
+::-webkit-scrollbar {
+  width: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgb(254, 215, 173);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgb(109, 67, 0);
+  border-radius: 3px;
+}

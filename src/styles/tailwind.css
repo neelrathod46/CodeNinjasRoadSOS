@@ -1,4 +1,151 @@
+/* ─── Amelia Tailwind Configuration ──────────────────────────────────────── */
 @import 'tailwindcss' source(none);
 @source '../**/*.{js,ts,jsx,tsx}';
 
 @import 'tw-animate-css';
+
+/* ─── Amelia Tailwind Utilities ───────────────────────────────────────────── */
+@layer utilities {
+  /* Amelia glow effects */
+  .glow-brown {
+    filter: drop-shadow(0 0 10px rgb(109, 67, 0));
+  }
+
+  .glow-brown-sm {
+    filter: drop-shadow(0 0 5px rgb(109, 67, 0));
+  }
+
+  .glow-brown-lg {
+    filter: drop-shadow(0 0 20px rgb(109, 67, 0));
+  }
+
+  /* Amelia gradient background */
+  .bg-amelia {
+    background: linear-gradient(to right, rgb(255, 255, 255), rgb(254, 215, 173));
+  }
+
+  /* Amelia accent underline on hover */
+  .link-amelia {
+    position: relative;
+    transition: color 0.3s linear;
+  }
+
+  .link-amelia::before {
+    position: absolute;
+    content: "";
+    bottom: -3px;
+    left: 0;
+    width: 0%;
+    height: 3px;
+    background-color: rgb(109, 67, 0);
+    transition: 0.2s linear;
+  }
+
+  .link-amelia:hover {
+    color: rgb(109, 67, 0);
+  }
+
+  .link-amelia:hover::before {
+    width: 100%;
+  }
+
+  /* Amelia brown accent text */
+  .text-amelia {
+    color: rgb(109, 67, 0);
+    text-shadow: 0 0 10px rgb(109, 67, 0);
+  }
+
+  /* Amelia social icon circle */
+  .social-icon {
+    display: inline-flex;
+    justify-content: center;
+    align-items: center;
+    width: 3rem;
+    height: 3rem;
+    background-color: transparent;
+    border: 0.2rem solid rgb(109, 67, 0);
+    border-radius: 50%;
+    color: rgb(109, 67, 0);
+    font-size: 1.5rem;
+    transition: 0.2s linear;
+  }
+
+  .social-icon:hover {
+    scale: 1.3;
+    color: white;
+    background-color: rgb(109, 67, 0);
+    filter: drop-shadow(0 0 10px rgb(109, 67, 0));
+  }
+}
+
+/* ─── Amelia Tailwind Components ──────────────────────────────────────────── */
+@layer components {
+  /* Primary CTA button */
+  .btn-amelia {
+    background-color: rgb(109, 67, 0);
+    color: #ffffff;
+    border: 2px solid rgb(109, 67, 0);
+    border-radius: 5px;
+    padding: 8px 28px;
+    font-weight: 700;
+    font-size: 1rem;
+    transition: 0.2s linear;
+    cursor: pointer;
+  }
+
+  .btn-amelia:hover {
+    scale: 1.1;
+    color: rgb(109, 67, 0);
+    background-color: transparent;
+    box-shadow: 0 0 40px rgb(109, 67, 0);
+  }
+
+  /* Outline pill button (like nav contact) */
+  .btn-amelia-outline {
+    background-color: transparent;
+    padding: 5px 20px;
+    border-radius: 20px;
+    border: 2px solid rgb(109, 67, 0);
+    color: rgb(109, 67, 0);
+    font-weight: 500;
+    transition: 0.2s linear;
+    cursor: pointer;
+  }
+
+  .btn-amelia-outline:hover {
+    background-color: rgb(109, 67, 0);
+    color: #ffffff;
+  }
+
+  /* Card component */
+  .card-amelia {
+    background-color: rgba(255, 255, 255, 0.75);
+    border: 1px solid rgba(109, 67, 0, 0.15);
+    border-radius: 10px;
+    padding: 24px;
+    backdrop-filter: blur(4px);
+    box-shadow: 0 4px 20px rgba(109, 67, 0, 0.08);
+    transition: box-shadow 0.2s linear;
+  }
+
+  .card-amelia:hover {
+    box-shadow: 0 8px 32px rgba(109, 67, 0, 0.18);
+  }
+
+  /* Input field */
+  .input-amelia {
+    background-color: rgba(255, 255, 255, 0.8);
+    border: 1.5px solid rgba(109, 67, 0, 0.3);
+    border-radius: 5px;
+    padding: 8px 14px;
+    font-family: 'Poppins', sans-serif;
+    font-size: 1rem;
+    outline: none;
+    transition: border-color 0.2s linear, box-shadow 0.2s linear;
+  }
+
+  .input-amelia:focus {
+    border-color: rgb(109, 67, 0);
+    box-shadow: 0 0 8px rgba(109, 67, 0, 0.25);
+  }
+}
