@@ -1,359 +1,228 @@
-import "leaflet/dist/leaflet.css";
-import L from "leaflet";
 import { useEffect, useRef, useState, useCallback } from "react";
 import {
-  AlertTriangle,
-  Phone,
-  MessageSquare,
-  Map,
-  User,
-  Send,
-  Wifi,
-  WifiOff,
-  Plus,
-  Trash2,
-  Navigation,
-  Hospital,
-  ShieldCheck,
-  Wrench,
-  Truck,
-  ChevronDown,
-  ChevronUp,
-  CheckCircle,
-  Loader,
+  Phone, MessageSquare, MapPin, Users, Settings,
+  X, Send, Wifi, WifiOff, Plus, Trash2, Loader,
+  CheckCircle, RefreshCw, Hospital, Wrench, Truck,
+  ChevronRight, Navigation2,
 } from "lucide-react";
-
-// Fix leaflet default icon paths
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png",
-  iconUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png",
-  shadowUrl: "https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png",
-});
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface EmergencyContact {
-  id: string;
-  name: string;
-  phone: string;
-}
+interface Contact { id: string; name: string; phone: string; }
 
-interface UserProfile {
-  name: string;
+interface Profile {
   bloodGroup: string;
   conditions: string;
-  contacts: EmergencyContact[];
+  allergies: string;
+  contacts: Contact[];
+  emergencyNumber: string;
 }
 
-interface ChatMessage {
-  id: string;
-  role: "user" | "bot";
-  text: string;
-}
-
-interface GPSCoords {
-  lat: number;
-  lng: number;
-  accuracy: number;
-}
-
-type Tab = "sos" | "chat" | "map" | "profile";
-
-// ─── LocalStorage ─────────────────────────────────────────────────────────────
-
-const STORAGE_KEY = "crashguard_profile";
-
-function loadProfile(): UserProfile {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {}
-  return { name: "", bloodGroup: "", conditions: "", contacts: [] };
-}
-
-function saveProfile(p: UserProfile) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(p));
-}
-
-// ─── Offline first-aid knowledge base ────────────────────────────────────────
-
-const OFFLINE_RESPONSES: { keywords: string[]; answer: string }[] = [
-  {
-    keywords: ["bleeding", "blood", "wound", "cut"],
-    answer:
-      "**Stop the bleeding:** Apply firm, direct pressure with a clean cloth. Do NOT remove the cloth — add more on top if it soaks through. Elevate the limb above heart level if possible. Maintain pressure for at least 10–15 minutes.",
-  },
-  {
-    keywords: ["breathing", "breath", "inhale", "airway", "choking"],
-    answer:
-      "**Airway emergency:** Tilt the head back, lift the chin to open the airway. Check for breathing for 10 seconds. If absent, begin CPR — 30 chest compressions (hard and fast) then 2 rescue breaths. Continue until help arrives.",
-  },
-  {
-    keywords: ["cpr", "cardiac", "heart", "pulse", "unconscious"],
-    answer:
-      "**CPR:** Place the heel of your hand on the center of the chest. Compress 5–6 cm deep at 100–120 per minute. Give 2 rescue breaths after every 30 compressions. Do not stop until EMS arrives or the person regains consciousness.",
-  },
-  {
-    keywords: ["burn", "fire", "scald", "hot"],
-    answer:
-      "**Burns:** Cool with cool (not cold) running water for 20 minutes. Remove jewelry near the burn. Do NOT apply butter, toothpaste, or ice. Cover loosely with a sterile non-fluffy material. Seek emergency care for large or deep burns.",
-  },
-  {
-    keywords: ["fracture", "broken", "bone", "spine", "neck", "back"],
-    answer:
-      "**Suspected fracture / spinal injury:** Do NOT move the person unless there is immediate danger. Immobilize the injured area in the position found. If they must be moved, support the head and neck in a neutral position. Await EMS.",
-  },
-  {
-    keywords: ["shock", "pale", "faint", "dizzy", "weak"],
-    answer:
-      "**Shock:** Lay the person flat and raise their legs 20–30 cm (unless head, neck, or leg injury). Keep them warm. Do NOT give food or drink. Loosen tight clothing. Monitor breathing until help arrives.",
-  },
-  {
-    keywords: ["head", "concussion", "skull", "hit head"],
-    answer:
-      "**Head injury:** Keep the person still and calm. Do NOT remove a helmet if worn. Watch for confusion, vomiting, unequal pupils, or loss of consciousness — these require immediate EMS. Apply gentle pressure to scalp wounds but do NOT press on the skull.",
-  },
-  {
-    keywords: ["tire", "tyre", "flat", "puncture", "wheel"],
-    answer:
-      "**Flat tyre:** Move safely off the road and activate hazard lights. Apply the handbrake. Loosen wheel nuts before jacking. Jack under the vehicle's recommended lift points. Replace with spare, tighten nuts in a star pattern.",
-  },
-  {
-    keywords: ["overheating", "overheat", "radiator", "steam", "engine hot"],
-    answer:
-      "**Engine overheating:** Pull over immediately, switch off the engine. Do NOT open the bonnet while steam is visible — wait 30 minutes. Never open the radiator cap on a hot engine. Call a tow service.",
-  },
-  {
-    keywords: ["car fire", "smoke", "flames", "vehicle fire"],
-    answer:
-      "**Vehicle fire:** Stop and switch off the engine immediately. Everyone must exit — do NOT retrieve belongings. Move 100m away. Call emergency services. Never open the bonnet if you suspect an engine fire.",
-  },
-];
-
-function offlineAnswer(input: string): string {
-  const lower = input.toLowerCase();
-  for (const { keywords, answer } of OFFLINE_RESPONSES) {
-    if (keywords.some((k) => lower.includes(k))) return answer;
-  }
-  return "I couldn't find a specific match. For life-threatening emergencies call **112 / 911** immediately. Topics I cover: bleeding, CPR, breathing, burns, fractures, shock, head injury, flat tyre, overheating, vehicle fire.";
-}
-
-// ─── Map POI config ───────────────────────────────────────────────────────────
-
-const POI_CATEGORIES = [
-  { key: "hospital", label: "Hospitals",  icon: Hospital,    color: "#d42b2b", query: "amenity=hospital"  },
-  { key: "police",   label: "Police",     icon: ShieldCheck, color: "#1d4ed8", query: "amenity=police"    },
-  { key: "repair",   label: "Car Repair", icon: Wrench,      color: "#d97706", query: "shop=car_repair"   },
-  { key: "tow",      label: "Tow/Rental", icon: Truck,       color: "#059669", query: "amenity=car_rental"},
-] as const;
-
-type POIKey = (typeof POI_CATEGORIES)[number]["key"];
+interface Coords { lat: number; lng: number; accuracy?: number; }
 
 interface POI {
   id: number;
+  name: string;
   lat: number;
   lng: number;
-  name: string;
-  category: POIKey;
+  phone?: string;
+  category: "hospital" | "repair" | "tow";
+  distance: number;
 }
 
-function makePOIIcon(color: string) {
-  return L.divIcon({
-    className: "",
-    html: `<div style="width:26px;height:26px;background:${color};border:2.5px solid white;border-radius:50%;box-shadow:0 2px 6px rgba(0,0,0,0.3)"></div>`,
-    iconSize: [26, 26],
-    iconAnchor: [13, 13],
-  });
+interface Msg { id: string; role: "user" | "bot"; text: string; }
+
+// ─── Storage ──────────────────────────────────────────────────────────────────
+
+const STORE_KEY = "crashsafe_v2";
+
+function loadProfile(): Profile {
+  try { const r = localStorage.getItem(STORE_KEY); if (r) return JSON.parse(r); } catch {}
+  return { bloodGroup: "", conditions: "", allergies: "", contacts: [], emergencyNumber: "112" };
 }
 
-async function fetchPOIs(lat: number, lng: number, category: POIKey): Promise<POI[]> {
-  const cat = POI_CATEGORIES.find((c) => c.key === category)!;
-  const query = `[out:json][timeout:10];node[${cat.query}](around:3000,${lat},${lng});out 15;`;
-  const res = await fetch(
-    `https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`
-  );
+function saveProfile(p: Profile) { localStorage.setItem(STORE_KEY, JSON.stringify(p)); }
+
+// ─── Utilities ────────────────────────────────────────────────────────────────
+
+// Haversine formula — great-circle distance between two GPS coordinates
+function haversineKm(lat1: number, lng1: number, lat2: number, lng2: number) {
+  const R = 6371, r = Math.PI / 180;
+  const dLat = (lat2 - lat1) * r, dLng = (lng2 - lng1) * r;
+  const a = Math.sin(dLat / 2) ** 2 + Math.cos(lat1 * r) * Math.cos(lat2 * r) * Math.sin(dLng / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function fmtKm(km: number) { return km < 1 ? `${Math.round(km * 1000)} m` : `${km.toFixed(1)} km`; }
+
+function fmtCoords(c: Coords) {
+  return `${Math.abs(c.lat).toFixed(5)}°${c.lat >= 0 ? "N" : "S"} ${Math.abs(c.lng).toFixed(5)}°${c.lng >= 0 ? "E" : "W"}`;
+}
+
+// Nominatim reverse geocoding — area name from coordinates (free, no key)
+async function reverseGeocode(lat: number, lng: number): Promise<string> {
+  try {
+    const res = await fetch(
+      `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`,
+      { headers: { "Accept-Language": "en" } }
+    );
+    const d = await res.json();
+    const a = d.address || {};
+    const area = a.suburb || a.neighbourhood || a.city_district || a.city || a.town || a.village || "";
+    const state = a.state || "";
+    return [area, state].filter(Boolean).join(", ") || "Location acquired";
+  } catch { return ""; }
+}
+
+// Directions URL — Apple Maps on iOS, Google Maps everywhere else
+function dirUrl(lat: number, lng: number, uLat?: number, uLng?: number) {
+  if (/iPad|iPhone|iPod/.test(navigator.userAgent)) return `maps://maps.apple.com/?daddr=${lat},${lng}`;
+  const origin = uLat != null ? `&origin=${uLat},${uLng}` : "";
+  return `https://www.google.com/maps/dir/?api=1&destination=${lat},${lng}${origin}`;
+}
+
+// SMS URI — separator differs between iOS and Android
+function smsUri(phone: string, body: string) {
+  const ios = /iPad|iPhone|iPod/.test(navigator.userAgent);
+  return `sms:${phone}${ios ? "&" : "?"}body=${encodeURIComponent(body)}`;
+}
+
+// ─── POI fetching (Overpass API — no map rendered, just data) ─────────────────
+
+async function fetchPOIs(lat: number, lng: number): Promise<POI[]> {
+  const q = `[out:json][timeout:15];(
+    node[amenity=hospital](around:5000,${lat},${lng});
+    way[amenity=hospital](around:5000,${lat},${lng});
+    node[shop=car_repair](around:5000,${lat},${lng});
+    node[amenity=car_rental](around:5000,${lat},${lng});
+  );out center 40;`;
+  const res = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(q)}`);
   const json = await res.json();
-  return (json.elements || []).map((el: any) => ({
-    id: el.id,
-    lat: el.lat,
-    lng: el.lon,
-    name: el.tags?.name || cat.label,
-    category,
-  }));
+  return (json.elements || [])
+    .map((el: any) => {
+      const eLat = el.lat ?? el.center?.lat, eLng = el.lon ?? el.center?.lon;
+      if (!eLat || !eLng) return null;
+      const hosp = el.tags?.amenity === "hospital";
+      const tow = el.tags?.amenity === "car_rental";
+      const cat: POI["category"] = hosp ? "hospital" : tow ? "tow" : "repair";
+      return {
+        id: el.id,
+        name: el.tags?.name || (hosp ? "Hospital" : tow ? "Car Rental / Tow" : "Car Repair"),
+        lat: eLat, lng: eLng,
+        phone: el.tags?.phone || el.tags?.["contact:phone"] || undefined,
+        category: cat,
+        distance: haversineKm(lat, lng, eLat, eLng),
+      };
+    })
+    .filter(Boolean)
+    .sort((a: POI, b: POI) => a.distance - b.distance);
 }
 
-// ─── SOS Screen ───────────────────────────────────────────────────────────────
+// ─── Offline manuals ──────────────────────────────────────────────────────────
 
-function SOSScreen({ profile }: { profile: UserProfile }) {
-  const [coords, setCoords] = useState<GPSCoords | null>(null);
-  const [gpsError, setGpsError] = useState<string | null>(null);
-  const [sosActive, setSosActive] = useState(false);
-  const [smsSent, setSmsSent] = useState(false);
-  const [sending, setSending] = useState(false);
+const FIRST_AID_MANUAL = [
+  {
+    title: "Unconscious Person & CPR",
+    keywords: ["unconscious","unresponsive","not breathing","no pulse","cpr","cardiac","heart","compressions","passed out","fainted","wake up","won't wake"],
+    content: "**Check response:** Tap shoulders and shout. No response — call 112 immediately.\n\n**Open airway:** Tilt head back, lift chin. Check for breathing (look/listen/feel) for 10 seconds.\n\n**Start CPR if not breathing:**\n• Heel of hand on centre of chest (lower breastbone)\n• Press 5–6 cm deep at 100–120/min\n• 30 compressions → 2 rescue breaths (tilt head, pinch nose, 1-second breath)\n• Continue until EMS arrives or person recovers\n\n**Recovery position:** If breathing but unconscious — roll onto side to prevent choking.",
+  },
+  {
+    title: "Severe Bleeding",
+    keywords: ["bleeding","blood","wound","cut","haemorrhage","tourniquet","laceration","gash","gushing"],
+    content: "**Direct pressure:** Use the cleanest cloth available. Press firmly — do NOT remove it. Layer more on top if soaked through.\n\n**Elevate the limb** above heart level.\n\n**Hold pressure** for 10–15 minutes without releasing.\n\n**Tourniquet** (life-threatening limb bleed only): Apply 5–7 cm above wound. Tighten until bleeding stops. Write the time on the skin. Do NOT remove.\n\n**Do NOT:** Remove embedded objects. Press on skull fractures.",
+  },
+  {
+    title: "Breathing / Airway",
+    keywords: ["breathing","breath","airway","choking","choke","asphyxia","inhale","gasping","wheezing","can't breathe"],
+    content: "**Choking (conscious):** 5 firm back blows between shoulder blades, then 5 abdominal thrusts. Alternate until clear or they lose consciousness.\n\n**Choking (unconscious):** Begin CPR. Each time you open the airway, look for the object and remove it if visible.\n\n**Breathing difficulty (not choking):** Keep upright in the position they find easiest. Loosen collar/tight clothing. Call 112. Do NOT lay flat unless unconscious.",
+  },
+  {
+    title: "Fractures & Broken Bones",
+    keywords: ["fracture","broken","bone","break","deformed","limb","leg","arm","splint"],
+    content: "**Do NOT straighten the limb.** Support it in the position found with padding (rolled clothing).\n\n**Arm fracture:** Improvise a sling with a shirt or scarf.\n\n**Leg fracture:** Pad between legs and loosely tie together.\n\n**Open fracture (bone visible):** Cover loosely with clean cloth — do NOT push the bone back. Seek emergency care immediately.\n\n**Check circulation:** Press a fingertip below the injury — pink should return within 2 seconds.",
+  },
+  {
+    title: "Spinal / Neck Injury",
+    keywords: ["spine","spinal","neck","cervical","paralysis","numbness","tingling","back injury","can't feel","can't move"],
+    content: "**Do NOT move the person** unless there is immediate danger (fire, water, oncoming traffic).\n\n**Hold the head still** in the position found — both hands on either side. Do not twist or flex the neck.\n\n**If they must be moved:** Log-roll with 3+ people, keeping head/spine/legs in one line.\n\n**Signs:** Neck or back pain, numbness/tingling in limbs, inability to move, loss of bladder/bowel control.\n\n**Airway always first:** If not breathing, CPR takes priority over spinal precaution.",
+  },
+  {
+    title: "Shock",
+    keywords: ["shock","pale","cold","clammy","faint","dizzy","weak pulse","low blood pressure","shaking","trembling"],
+    content: "**Signs:** Pale cold clammy skin · Rapid weak pulse · Fast shallow breathing · Confusion or anxiety.\n\n**Treatment:**\n1. Lay the person flat\n2. Raise legs 20–30 cm (unless neck, spinal, chest, or leg injury)\n3. Cover with a jacket or blanket — keep warm\n4. Do NOT give food or drink\n5. Loosen tight clothing (collar, belt)\n6. Call 112 — stay with them, monitor breathing",
+  },
+  {
+    title: "Head Injury",
+    keywords: ["head","concussion","skull","hit head","brain","confused","vomiting","seizure","pupils","headache","temple"],
+    content: "**Call 112 immediately if any of these:**\n• Loss of consciousness (even briefly)\n• Repeated vomiting · Seizure\n• Unequal pupil sizes · Clear fluid from nose or ears\n• Severe or worsening headache · Confusion or aggression\n\n**Care:** Keep still and calm. Gentle pressure on scalp wounds with a clean cloth — do NOT press on a suspected skull fracture. Do NOT give aspirin or ibuprofen.",
+  },
+  {
+    title: "Burns",
+    keywords: ["burn","burned","scald","hot","blister","chemical","fire burn","skin burn"],
+    content: "**Cool immediately:** Run cool (not cold, not ice) water over the burn for 20 minutes. Start within 3 hours.\n\n**Remove:** Jewellery and loose clothing near the burn (not if stuck to skin).\n\n**Cover:** Loosely with cling film or a clean non-fluffy material.\n\n**Do NOT:** Butter, toothpaste, oil, ice, creams, or cotton wool. Do not break blisters.\n\n**Emergency care for:** Burns larger than 3 cm · Face/hands/feet/joints · Chemical or electrical burns · White or charred skin.",
+  },
+];
 
-  const getLocation = useCallback(() => {
-    if (!navigator.geolocation) {
-      setGpsError("Geolocation not supported by this browser.");
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => setCoords({ lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy }),
-      () => setGpsError("Unable to retrieve location. Check browser location permissions."),
-      { enableHighAccuracy: true }
-    );
-  }, []);
+const CAR_REPAIR_MANUAL = [
+  {
+    title: "Flat Tyre",
+    keywords: ["flat","tyre","tire","puncture","blowout","wheel","spare"],
+    content: "**If tyre blows while driving:** Grip wheel firmly. Do NOT brake hard. Ease off accelerator, steer calmly to the shoulder.\n\n**Safe tyre change:**\n1. Hazard lights on — move fully off the road — apply handbrake\n2. Loosen wheel nuts BEFORE jacking (half-turn, star pattern)\n3. Jack under the designated lift point (door sill sticker)\n4. Fit spare, hand-tighten nuts in star pattern\n5. Lower jack, fully tighten nuts\n\nSpare tyres: max 80 km/h — get the original repaired soon.",
+  },
+  {
+    title: "Engine Overheating",
+    keywords: ["overheat","overheating","radiator","steam","temperature","engine hot","temp light","coolant"],
+    content: "**Warning signs:** Temperature gauge in red, steam from bonnet, burning smell.\n\n1. Turn off the A/C\n2. On a highway — switch on the heater briefly to draw heat away from the engine\n3. Pull over safely and switch off the engine\n4. Do NOT open the bonnet while steam is visible — wait 30 minutes\n5. NEVER open the radiator cap on a hot engine (risk of scalding)\n6. Once cool — check coolant. Add water if empty (temporary fix)\n7. Call a tow truck — do not drive until repaired.",
+  },
+  {
+    title: "Vehicle Fire",
+    keywords: ["fire","car fire","smoke","flames","burning","engine fire","bonnet fire"],
+    content: "**Act immediately — every second counts:**\n1. Pull over and switch off engine\n2. Everyone exits — no belongings\n3. Move 100+ metres away (fuel tank can explode)\n4. Call emergency services\n5. Do NOT open the bonnet if you suspect an engine fire\n6. Small accessible fire only: extinguisher aimed at the base — if not out in 10 seconds, retreat\n\n**Never re-enter a burning vehicle.**",
+  },
+  {
+    title: "Dead Battery / Won't Start",
+    keywords: ["battery","dead battery","won't start","not starting","jump start","jump leads","jumper","flat battery"],
+    content: "**Jump-start steps:**\n1. Position the working car close — cars must NOT touch each other\n2. RED cable: dead battery (+) → working battery (+)\n3. BLACK cable: working battery (-) → unpainted metal on the dead car (not the dead battery terminal)\n4. Start working car, run for 2–3 minutes\n5. Start the dead car\n6. Remove cables in reverse order\n7. Drive the recovered car for 30+ minutes to recharge.",
+  },
+  {
+    title: "Fuel Leak",
+    keywords: ["fuel","petrol","gas","diesel","leak","smell fuel","fuel smell","dripping fuel"],
+    content: "**Fuel leaks risk fire and explosion.**\n\n1. Switch off engine immediately\n2. No smoking — no open flames — no phone near the fuel\n3. Disconnect the battery if you can do so safely\n4. Everyone exits and moves 50+ metres upwind\n5. Call emergency services for any significant leak\n6. Do NOT drive the vehicle\n7. Call a tow truck",
+  },
+  {
+    title: "After a Crash — Post-Impact",
+    keywords: ["after crash","post crash","airbag","deployed","collision","accident","impact","just crashed"],
+    content: "**Before exiting the vehicle:**\n• Switch off engine · Turn on hazard lights\n• Check all passengers for injuries before deciding to move anyone\n\n**Airbag powder:** Irritating but not toxic — brush off skin, wash with soap when possible.\n\n**Do NOT move injured passengers** unless there is an immediate threat (fire, water, oncoming traffic).\n\n**Undeployed airbags** in a damaged car can still deploy — avoid impact to dashboard and steering column.",
+  },
+];
 
-  useEffect(() => { getLocation(); }, [getLocation]);
+function offlineSearch(query: string): string {
+  const lower = query.toLowerCase();
+  const score = (kws: string[]) => kws.reduce((n, k) => n + (lower.includes(k) ? 1 : 0), 0);
 
-  const handleSOS = async () => {
-    if (sending) return;
-    setSosActive(true);
-    if (!coords) getLocation();
-    if (profile.contacts.length === 0) return;
-    setSending(true);
-    const locationText = coords
-      ? `https://maps.google.com/?q=${coords.lat},${coords.lng}`
-      : "Location unavailable";
-    const messages = profile.contacts.map((c) => ({
-      to: c.phone,
-      body: `EMERGENCY: ${profile.name || "Someone"} has been in a car crash. Blood group: ${profile.bloodGroup || "Unknown"}. Conditions: ${profile.conditions || "None listed"}. Location: ${locationText}`,
-    }));
-    try {
-      await fetch("/api/sos", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages }),
-      });
-    } catch {}
-    setSmsSent(true);
-    setSending(false);
-  };
+  const all = [
+    ...FIRST_AID_MANUAL.map(s => ({ ...s, tag: "First Aid" })),
+    ...CAR_REPAIR_MANUAL.map(s => ({ ...s, tag: "Car & Road" })),
+  ];
 
-  if (sosActive) {
-    return (
-      <div className="flex flex-col items-center gap-6 p-6 pt-10 text-center">
-        <div
-          className="w-32 h-32 rounded-full bg-primary flex items-center justify-center animate-pulse"
-          style={{ boxShadow: "0 0 0 16px #fee2e2" }}
-        >
-          <AlertTriangle className="w-16 h-16 text-white" />
-        </div>
-        <h2 className="text-2xl font-bold text-primary">SOS ACTIVE</h2>
+  const ranked = all
+    .map(s => ({ ...s, score: score(s.keywords) }))
+    .filter(s => s.score > 0)
+    .sort((a, b) => b.score - a.score);
 
-        {sending && (
-          <div className="flex items-center gap-2 text-muted-foreground text-sm">
-            <Loader className="w-4 h-4 animate-spin" />
-            Sending SMS alerts…
-          </div>
-        )}
-        {smsSent && (
-          <div className="flex items-center gap-2 text-green-700 text-sm font-medium">
-            <CheckCircle className="w-4 h-4" />
-            SMS sent to {profile.contacts.length} contact{profile.contacts.length !== 1 ? "s" : ""}
-          </div>
-        )}
-
-        {coords && (
-          <div className="w-full bg-card border-2 border-primary rounded-xl p-4 text-left space-y-2">
-            <div className="text-xs font-bold uppercase tracking-widest text-primary">
-              Your location — read this aloud
-            </div>
-            <div className="font-mono text-lg font-bold text-foreground">
-              {coords.lat.toFixed(6)}, {coords.lng.toFixed(6)}
-            </div>
-            <div className="text-xs text-muted-foreground">
-              maps.google.com/?q={coords.lat.toFixed(6)},{coords.lng.toFixed(6)}
-            </div>
-          </div>
-        )}
-
-        <a
-          href="tel:112"
-          className="w-full bg-primary text-white rounded-xl py-4 font-bold text-lg flex items-center justify-center gap-2"
-        >
-          <Phone className="w-5 h-5" />
-          Call 112 / Emergency Services
-        </a>
-
-        <button
-          onClick={() => { setSosActive(false); setSmsSent(false); }}
-          className="text-sm text-muted-foreground underline underline-offset-2"
-        >
-          Cancel SOS
-        </button>
-      </div>
-    );
+  if (ranked.length === 0) {
+    return "No specific match found. **For emergencies, call 112 immediately.**\n\nI can help with: CPR, unconscious person, bleeding, breathing, fractures, spinal injury, shock, head injury, burns, flat tyre, overheating, vehicle fire, dead battery, fuel leak, post-crash steps.";
   }
 
-  return (
-    <div className="flex flex-col items-center gap-6 p-6 pt-10">
-      <div className="text-center space-y-1">
-        <h1 className="text-2xl font-bold tracking-tight text-foreground">Emergency SOS</h1>
-        <p className="text-sm text-muted-foreground">
-          Tap to broadcast your location to emergency contacts
-        </p>
-      </div>
-
-      <button
-        onClick={handleSOS}
-        className="w-52 h-52 rounded-full bg-primary text-primary-foreground flex flex-col items-center justify-center gap-2 active:scale-95 transition-transform border-8 border-red-100 focus:outline-none"
-        style={{ boxShadow: "0 0 0 12px #fee2e2, 0 8px 40px rgba(212,43,43,0.35)" }}
-      >
-        <AlertTriangle className="w-14 h-14" strokeWidth={2.5} />
-        <span className="text-xl font-bold tracking-widest">SOS</span>
-      </button>
-
-      {coords && (
-        <div className="w-full bg-card border border-border rounded-xl p-4 space-y-2">
-          <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-            <Navigation className="w-4 h-4 text-primary" />
-            Your GPS Coordinates
-          </div>
-          <div className="font-mono text-sm bg-secondary rounded-lg p-3 space-y-1">
-            <div>Lat: <span className="font-semibold">{coords.lat.toFixed(6)}</span></div>
-            <div>Lng: <span className="font-semibold">{coords.lng.toFixed(6)}</span></div>
-            <div className="text-muted-foreground text-xs">±{Math.round(coords.accuracy)}m accuracy</div>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Read these to emergency services if you cannot share a link.
-          </p>
-        </div>
-      )}
-
-      {gpsError && (
-        <div className="w-full bg-accent border border-primary/20 rounded-xl p-3 text-sm text-primary">
-          {gpsError}
-        </div>
-      )}
-
-      {profile.contacts.length === 0 ? (
-        <div className="w-full bg-amber-50 border border-amber-200 rounded-xl p-3 text-sm text-amber-800">
-          No emergency contacts saved. Add contacts in the Profile tab.
-        </div>
-      ) : (
-        <div className="w-full space-y-2">
-          <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Will notify</p>
-          {profile.contacts.map((c) => (
-            <div key={c.id} className="flex items-center gap-3 bg-card border border-border rounded-xl px-4 py-3">
-              <div className="w-8 h-8 rounded-full bg-secondary flex items-center justify-center">
-                <Phone className="w-4 h-4 text-muted-foreground" />
-              </div>
-              <div>
-                <div className="font-medium text-sm">{c.name}</div>
-                <div className="text-xs text-muted-foreground">{c.phone}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
+  const top = ranked[0];
+  let result = `**${top.tag}: ${top.title}**\n\n${top.content}`;
+  if (ranked[1] && ranked[1].score >= top.score - 1 && ranked[1].tag !== top.tag) {
+    result += `\n\n---\n**Also relevant — ${ranked[1].tag}: ${ranked[1].title}**\n\n${ranked[1].content}`;
+  }
+  return result;
 }
 
-// ─── Chat Screen ──────────────────────────────────────────────────────────────
-
-// ─── Suggested question flows ─────────────────────────────────────────────────
+// ─── Chat suggestion flows ────────────────────────────────────────────────────
 
 const INITIAL_SUGGESTIONS = [
   "Someone is unconscious",
@@ -364,103 +233,97 @@ const INITIAL_SUGGESTIONS = [
   "I hit my head hard",
 ];
 
-const FOLLOW_UP_MAP: { keywords: string[]; suggestions: string[] }[] = [
+const FOLLOW_UPS: { keywords: string[]; suggestions: string[] }[] = [
   {
-    keywords: ["unconscious", "cpr", "compressions", "rescue breath", "pulse"],
-    suggestions: [
-      "How do I give rescue breaths?",
-      "They started breathing again — what now?",
-      "When should I stop CPR?",
-      "There are two of us — can we take turns?",
-    ],
+    keywords: ["cpr", "compressions", "unconscious", "rescue breath", "not breathing"],
+    suggestions: ["How do I give rescue breaths?", "They started breathing again — what now?", "When should I stop CPR?"],
   },
   {
-    keywords: ["bleeding", "pressure", "cloth", "wound", "elevate"],
-    suggestions: [
-      "The bleeding won't stop after 15 minutes",
-      "How do I make a tourniquet?",
-      "The wound looks very deep",
-      "There is something embedded in the wound",
-    ],
+    keywords: ["bleeding", "pressure", "tourniquet", "wound", "cloth"],
+    suggestions: ["The bleeding won't stop after 15 minutes", "How do I make a tourniquet?", "There is something embedded in the wound"],
   },
   {
-    keywords: ["airway", "breathing", "chin", "tilt", "choking"],
-    suggestions: [
-      "How do I do CPR?",
-      "They are choking on something",
-      "Their airway seems clear but they're still not breathing",
-      "They stopped breathing again",
-    ],
+    keywords: ["airway", "breathing", "chin", "choking", "choke"],
+    suggestions: ["How do I do CPR?", "They are choking on something solid", "They stopped breathing again"],
   },
   {
-    keywords: ["fracture", "bone", "immobilize", "spinal", "neutral position"],
-    suggestions: [
-      "Can I move them out of the car?",
-      "Their neck might be injured",
-      "How do I keep them still until help arrives?",
-      "The bone is visible through the skin",
-    ],
+    keywords: ["fracture", "bone", "sling", "splint", "immobilise"],
+    suggestions: ["Can I move them out of the car?", "Their neck might be injured", "The bone is visible through the skin"],
   },
   {
-    keywords: ["shock", "legs", "flat", "warm", "loosen"],
-    suggestions: [
-      "They are losing consciousness",
-      "Their skin looks very pale and cold",
-      "How long until shock becomes life-threatening?",
-      "They are vomiting — what should I do?",
-    ],
+    keywords: ["shock", "legs", "flat", "warm", "clammy", "pale"],
+    suggestions: ["They are losing consciousness", "Their skin is pale and cold", "They are vomiting — what should I do?"],
   },
   {
-    keywords: ["head", "concussion", "confusion", "pupil", "scalp"],
-    suggestions: [
-      "They briefly lost consciousness",
-      "They seem very confused and disoriented",
-      "There is bleeding from the head",
-      "Their pupils look different sizes",
-    ],
+    keywords: ["head", "concussion", "pupil", "scalp", "skull"],
+    suggestions: ["They briefly lost consciousness", "They seem confused and disoriented", "There is bleeding from the head wound"],
   },
   {
-    keywords: ["burn", "cool", "water", "scald", "cover"],
-    suggestions: [
-      "The burn is larger than my hand",
-      "Their clothing is stuck to the burn",
-      "The burn is on their face",
-      "I don't have water — what else can I use?",
-    ],
+    keywords: ["burn", "cool", "water", "blister", "scald"],
+    suggestions: ["The burn is larger than my hand", "Their clothing is stuck to the burned skin", "I don't have running water"],
   },
   {
-    keywords: ["tyre", "tire", "flat", "spare", "jack"],
-    suggestions: [
-      "I don't have a spare tyre",
-      "The car is in a dangerous position on the road",
-      "Can I drive slowly on a flat?",
-    ],
+    keywords: ["flat", "tyre", "tire", "spare", "jack", "blowout"],
+    suggestions: ["I don't have a spare tyre", "The car is still on the road", "Can I drive slowly on a flat?"],
   },
   {
-    keywords: ["overheat", "radiator", "bonnet", "engine", "steam"],
-    suggestions: [
-      "There is smoke coming from under the bonnet",
-      "How long should I wait before opening the bonnet?",
-      "The temperature warning light is on",
-    ],
+    keywords: ["overheat", "radiator", "bonnet", "steam", "coolant"],
+    suggestions: ["There is smoke from under the bonnet", "The temperature warning light came on", "How long should I wait before opening the bonnet?"],
   },
 ];
 
-function getSuggestionsForResponse(botText: string): string[] {
+function getSuggestions(botText: string): string[] {
   const lower = botText.toLowerCase();
-  for (const { keywords, suggestions } of FOLLOW_UP_MAP) {
-    if (keywords.some((k) => lower.includes(k))) return suggestions;
+  for (const { keywords, suggestions } of FOLLOW_UPS) {
+    if (keywords.some(k => lower.includes(k))) return suggestions;
   }
   return INITIAL_SUGGESTIONS;
 }
 
-function ChatScreen() {
+// ─── BottomSheet ──────────────────────────────────────────────────────────────
+
+function BottomSheet({
+  open, onClose, title, children, maxHeight = "85dvh",
+}: {
+  open: boolean; onClose: () => void; title: string; children: React.ReactNode; maxHeight?: string;
+}) {
+  if (!open) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-end">
+      <div className="absolute inset-0 bg-black/50" onClick={onClose} />
+      <div
+        className="relative w-full bg-white rounded-t-3xl flex flex-col shadow-2xl"
+        style={{ maxHeight }}
+      >
+        <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
+          <div className="w-10 h-1.5 bg-gray-200 rounded-full" />
+        </div>
+        <div className="flex items-center justify-between px-6 py-3 border-b border-gray-100 flex-shrink-0">
+          <h2 className="font-bold text-lg text-gray-900">{title}</h2>
+          <button
+            onClick={onClose}
+            className="w-11 h-11 flex items-center justify-center rounded-full bg-gray-100"
+          >
+            <X className="w-5 h-5 text-gray-700" />
+          </button>
+        </div>
+        <div className="flex-1 overflow-hidden flex flex-col min-h-0">
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Chat overlay (full-screen) ───────────────────────────────────────────────
+
+function ChatOverlay({ open, onClose }: { open: boolean; onClose: () => void }) {
   const [online, setOnline] = useState(false);
-  const [messages, setMessages] = useState<ChatMessage[]>([
+  const [messages, setMessages] = useState<Msg[]>([
     {
       id: "0",
       role: "bot",
-      text: "Hello. I'm CrashGuide. Ask me about first aid or basic car repairs. Toggle **Online** for AI-powered responses (requires backend).",
+      text: "Hello. I'm CrashGuide.\n\nAsk me about first aid or car repairs. **Offline mode** uses built-in manuals. Toggle **AI Online** to use the AI assistant (requires your backend at /api/chat).",
     },
   ]);
   const [suggestions, setSuggestions] = useState<string[]>(INITIAL_SUGGESTIONS);
@@ -476,13 +339,13 @@ function ChatScreen() {
     if (!text || loading) return;
     setInput("");
     setSuggestions([]);
-    setMessages((m) => [...m, { id: Date.now().toString(), role: "user", text }]);
+    setMessages(m => [...m, { id: Date.now().toString(), role: "user", text }]);
     setLoading(true);
 
-    let botReply = "";
+    let reply = "";
     if (!online) {
-      await new Promise((r) => setTimeout(r, 350));
-      botReply = offlineAnswer(text);
+      await new Promise(r => setTimeout(r, 280));
+      reply = offlineSearch(text);
     } else {
       try {
         const res = await fetch("/api/chat", {
@@ -491,18 +354,16 @@ function ChatScreen() {
           body: JSON.stringify({ message: text }),
         });
         const data = await res.json();
-        botReply = data.reply || "No response.";
+        reply = data.reply || "No response received.";
       } catch {
-        botReply = "Online mode unavailable. " + offlineAnswer(text);
+        reply = "Online mode unavailable — using offline manual.\n\n" + offlineSearch(text);
       }
     }
 
-    setMessages((m) => [...m, { id: Date.now().toString() + "b", role: "bot", text: botReply }]);
-    setSuggestions(getSuggestionsForResponse(botReply));
+    setMessages(m => [...m, { id: Date.now().toString() + "b", role: "bot", text: reply }]);
+    setSuggestions(getSuggestions(reply));
     setLoading(false);
   };
-
-  const send = () => sendText(input.trim());
 
   function renderText(text: string) {
     return text.split(/(\*\*[^*]+\*\*)/).map((chunk, i) =>
@@ -510,31 +371,41 @@ function ChatScreen() {
     );
   }
 
+  if (!open) return null;
+
   return (
-    <div className="flex flex-col h-full">
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border bg-card">
-        <h2 className="font-bold text-base">CrashGuide Chat</h2>
+    <div className="fixed inset-0 z-50 bg-white flex flex-col" style={{ fontFamily: "Inter, system-ui, sans-serif" }}>
+      {/* Header */}
+      <div className="flex items-center gap-3 px-4 py-3 border-b border-gray-100 flex-shrink-0 bg-white">
         <button
-          onClick={() => setOnline((o) => !o)}
-          className={`flex items-center gap-1.5 rounded-full px-4 py-2 text-xs font-bold transition-colors border-2 ${
+          onClick={onClose}
+          className="w-11 h-11 flex items-center justify-center rounded-full bg-gray-100 flex-shrink-0"
+        >
+          <X className="w-5 h-5 text-gray-700" />
+        </button>
+        <h2 className="font-bold text-base flex-1 text-gray-900">First Aid &amp; Repair Guide</h2>
+        <button
+          onClick={() => setOnline(o => !o)}
+          className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-bold border-2 transition-colors flex-shrink-0 ${
             online
               ? "bg-green-600 text-white border-green-700"
-              : "bg-foreground text-background border-foreground"
+              : "bg-gray-900 text-white border-gray-900"
           }`}
         >
-          {online ? <Wifi className="w-3.5 h-3.5" /> : <WifiOff className="w-3.5 h-3.5" />}
+          {online ? <Wifi className="w-4 h-4" /> : <WifiOff className="w-4 h-4" />}
           {online ? "AI Online" : "Offline"}
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3">
-        {messages.map((m, idx) => (
+      {/* Messages */}
+      <div className="flex-1 overflow-y-auto px-4 py-4 space-y-3 bg-gray-50">
+        {messages.map(m => (
           <div key={m.id} className={`flex ${m.role === "user" ? "justify-end" : "justify-start"}`}>
             <div
-              className={`max-w-[82%] rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+              className={`max-w-[86%] rounded-2xl px-4 py-3 text-sm leading-relaxed ${
                 m.role === "user"
-                  ? "bg-primary text-white rounded-br-sm"
-                  : "bg-card border border-border text-foreground rounded-bl-sm"
+                  ? "bg-[#d42b2b] text-white rounded-br-sm"
+                  : "bg-white border border-gray-200 text-gray-900 rounded-bl-sm shadow-sm"
               }`}
             >
               {renderText(m.text)}
@@ -542,36 +413,27 @@ function ChatScreen() {
           </div>
         ))}
 
-        {/* Suggestion chips — shown after last bot message when not loading */}
         {!loading && suggestions.length > 0 && (
-          <div className="flex flex-col gap-2.5 pt-1">
-            <p className="text-xs font-bold uppercase tracking-wider text-foreground px-1">
-              Quick questions
-            </p>
-            <div className="flex flex-col gap-2">
-              {suggestions.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => sendText(s)}
-                  className="text-left text-sm font-semibold bg-white text-primary border-2 border-primary rounded-xl px-4 py-3 hover:bg-primary hover:text-white transition-colors active:scale-[0.98]"
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
+          <div className="space-y-2 pt-1">
+            <p className="text-xs font-bold uppercase tracking-wider text-gray-400 px-1">Quick questions</p>
+            {suggestions.map(s => (
+              <button
+                key={s}
+                onClick={() => sendText(s)}
+                className="w-full text-left text-sm font-semibold bg-white text-[#d42b2b] border-2 border-[#d42b2b] rounded-xl px-4 py-3.5 min-h-[56px] hover:bg-[#d42b2b] hover:text-white transition-colors active:scale-[0.98] shadow-sm"
+              >
+                {s}
+              </button>
+            ))}
           </div>
         )}
 
         {loading && (
           <div className="flex justify-start">
-            <div className="bg-card border border-border rounded-2xl rounded-bl-sm px-4 py-3">
-              <div className="flex gap-1 items-center">
-                {[0, 150, 300].map((d) => (
-                  <span
-                    key={d}
-                    className="w-2 h-2 bg-muted-foreground rounded-full animate-bounce"
-                    style={{ animationDelay: `${d}ms` }}
-                  />
+            <div className="bg-white border border-gray-200 rounded-2xl rounded-bl-sm px-4 py-3 shadow-sm">
+              <div className="flex gap-1.5 items-center">
+                {[0, 150, 300].map(d => (
+                  <span key={d} className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: `${d}ms` }} />
                 ))}
               </div>
             </div>
@@ -580,411 +442,592 @@ function ChatScreen() {
         <div ref={bottomRef} />
       </div>
 
-      <div className="px-4 pb-4 pt-2 border-t border-border bg-card">
+      {/* Input */}
+      <div className="px-4 pb-6 pt-3 border-t border-gray-100 bg-white flex-shrink-0">
         <div className="flex gap-2">
           <input
             value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendText(input.trim()); } }}
-            placeholder={online ? "Ask anything…" : "Ask about first aid or car issues…"}
-            className="flex-1 bg-input-background rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendText(input.trim()); } }}
+            placeholder="Describe what's happening…"
+            className="flex-1 bg-gray-100 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#d42b2b]/30 min-h-[56px]"
           />
           <button
-            onClick={send}
+            onClick={() => sendText(input.trim())}
             disabled={!input.trim() || loading}
-            className="bg-primary text-white rounded-xl px-4 py-3 disabled:opacity-40 transition-opacity"
+            className="bg-[#d42b2b] text-white rounded-xl px-4 disabled:opacity-40 min-h-[56px] min-w-[56px] flex items-center justify-center"
           >
-            <Send className="w-4 h-4" />
+            <Send className="w-5 h-5" />
           </button>
         </div>
-        {online && (
-          <p className="text-xs text-muted-foreground mt-2 text-center">
-            Requires backend at <code className="bg-secondary px-1 rounded">/api/chat</code>
-          </p>
-        )}
       </div>
     </div>
   );
 }
 
-// ─── Map Screen (vanilla Leaflet, no react-leaflet) ───────────────────────────
+// ─── Nearby Services sheet ────────────────────────────────────────────────────
 
-function MapScreen() {
-  const mapDivRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const userMarkerRef = useRef<L.Marker | null>(null);
-  const poiMarkersRef = useRef<L.Marker[]>([]);
+type POICat = "hospital" | "repair" | "tow";
 
-  const [coords, setCoords] = useState<GPSCoords | null>(null);
-  const [activeCategories, setActiveCategories] = useState<Set<POIKey>>(new Set(["hospital"]));
-  const [loadingPOI, setLoadingPOI] = useState(false);
+const POI_FILTERS: { key: POICat; label: string; Icon: typeof Hospital; color: string }[] = [
+  { key: "hospital", label: "Hospitals",   Icon: Hospital, color: "#d42b2b" },
+  { key: "repair",   label: "Repair",      Icon: Wrench,   color: "#d97706" },
+  { key: "tow",      label: "Tow / Rental",Icon: Truck,    color: "#059669" },
+];
+
+function NearbySheet({ open, onClose, coords }: { open: boolean; onClose: () => void; coords: Coords | null }) {
   const [pois, setPois] = useState<POI[]>([]);
+  const [fetching, setFetching] = useState(false);
+  const [error, setError] = useState("");
+  const [active, setActive] = useState<Set<POICat>>(new Set(["hospital", "repair", "tow"]));
 
-  // Init map once
   useEffect(() => {
-    if (!mapDivRef.current || mapRef.current) return;
-    const map = L.map(mapDivRef.current, { zoomControl: true }).setView([20, 0], 2);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
-    }).addTo(map);
-    mapRef.current = map;
+    if (!open || !coords || pois.length > 0) return;
+    setFetching(true);
+    setError("");
+    fetchPOIs(coords.lat, coords.lng)
+      .then(setPois)
+      .catch(() => setError("Could not load services. Check your internet connection."))
+      .finally(() => setFetching(false));
+  }, [open, coords]);
 
-    navigator.geolocation?.getCurrentPosition(
-      (pos) => {
-        const c = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
-        setCoords(c);
-        map.setView([c.lat, c.lng], 14);
-        userMarkerRef.current = L.marker([c.lat, c.lng])
-          .addTo(map)
-          .bindPopup(`<strong>You are here</strong><br/>${c.lat.toFixed(5)}, ${c.lng.toFixed(5)}`);
-      },
-      () => {}
-    );
-
-    return () => {
-      map.remove();
-      mapRef.current = null;
-    };
-  }, []);
-
-  // Sync POI markers whenever pois or activeCategories change
-  useEffect(() => {
-    const map = mapRef.current;
-    if (!map) return;
-
-    poiMarkersRef.current.forEach((m) => m.remove());
-    poiMarkersRef.current = [];
-
-    pois
-      .filter((p) => activeCategories.has(p.category))
-      .forEach((poi) => {
-        const cat = POI_CATEGORIES.find((c) => c.key === poi.category)!;
-        const navUrl = coords
-          ? `https://www.openstreetmap.org/directions?from=${coords.lat},${coords.lng}&to=${poi.lat},${poi.lng}`
-          : `https://www.openstreetmap.org/?mlat=${poi.lat}&mlon=${poi.lng}`;
-        const marker = L.marker([poi.lat, poi.lng], { icon: makePOIIcon(cat.color) })
-          .addTo(map)
-          .bindPopup(`<strong>${poi.name}</strong><br/><a href="${navUrl}" target="_blank" style="color:#1d4ed8;font-size:12px">Get Directions</a>`);
-        poiMarkersRef.current.push(marker);
-      });
-  }, [pois, activeCategories, coords]);
-
-  const toggleCategory = useCallback(async (key: POIKey) => {
-    if (!coords) return;
-
-    setActiveCategories((prev) => {
+  const toggle = (cat: POICat) => {
+    setActive(prev => {
       const next = new Set(prev);
-      if (next.has(key)) {
-        next.delete(key);
-      } else {
-        next.add(key);
-      }
+      if (next.has(cat)) next.delete(cat); else next.add(cat);
       return next;
     });
+  };
 
-    // If turning on and not yet loaded, fetch
-    setActiveCategories((prev) => {
-      if (!prev.has(key)) return prev; // was just removed, skip fetch
-      const alreadyLoaded = pois.some((p) => p.category === key);
-      if (!alreadyLoaded) {
-        setLoadingPOI(true);
-        fetchPOIs(coords.lat, coords.lng, key)
-          .then((results) => setPois((p) => [...p.filter((x) => x.category !== key), ...results]))
-          .catch(() => {})
-          .finally(() => setLoadingPOI(false));
-      }
-      return prev;
-    });
-  }, [coords, pois]);
-
-  // Load initial hospitals when coords arrive
-  useEffect(() => {
-    if (!coords) return;
-    setLoadingPOI(true);
-    fetchPOIs(coords.lat, coords.lng, "hospital")
-      .then((results) => setPois(results))
-      .catch(() => {})
-      .finally(() => setLoadingPOI(false));
-  }, [coords]);
+  const visible = pois.filter(p => active.has(p.category));
 
   return (
-    <div className="flex flex-col h-full">
-      <div className="px-4 py-3 border-b border-border bg-card flex-shrink-0">
-        <h2 className="font-bold text-base mb-2">Nearby Services</h2>
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {POI_CATEGORIES.map((cat) => {
-            const Icon = cat.icon;
-            const active = activeCategories.has(cat.key);
-            return (
-              <button
-                key={cat.key}
-                onClick={() => toggleCategory(cat.key)}
-                className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold whitespace-nowrap transition-colors border flex-shrink-0 ${
-                  active ? "text-white border-transparent" : "bg-card text-muted-foreground border-border"
-                }`}
-                style={active ? { backgroundColor: cat.color, borderColor: cat.color } : {}}
-              >
-                <Icon className="w-3.5 h-3.5" />
-                {cat.label}
-              </button>
-            );
-          })}
-          {loadingPOI && <Loader className="w-4 h-4 animate-spin text-muted-foreground self-center ml-1 flex-shrink-0" />}
-        </div>
+    <BottomSheet open={open} onClose={onClose} title="Nearby Services" maxHeight="88dvh">
+      {/* Filter chips */}
+      <div className="flex gap-2 px-6 py-3 border-b border-gray-100 flex-shrink-0">
+        {POI_FILTERS.map(({ key, label, Icon, color }) => {
+          const on = active.has(key);
+          return (
+            <button
+              key={key}
+              onClick={() => toggle(key)}
+              className="flex items-center gap-1.5 rounded-full px-3.5 py-2 text-xs font-bold border-2 transition-colors min-h-[40px]"
+              style={on ? { backgroundColor: color, borderColor: color, color: "white" } : { borderColor: "#e5e7eb", color: "#6b7280", backgroundColor: "white" }}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              {label}
+            </button>
+          );
+        })}
       </div>
 
-      <div className="flex-1 relative">
-        <div ref={mapDivRef} className="absolute inset-0" />
-        {!coords && (
-          <div className="absolute inset-0 flex items-center justify-center gap-2 text-muted-foreground text-sm bg-background/80 z-10">
-            <Loader className="w-5 h-5 animate-spin" />
-            Getting your location…
+      <div className="flex-1 overflow-y-auto">
+        {fetching && (
+          <div className="flex flex-col items-center justify-center py-16 gap-3 text-gray-500">
+            <Loader className="w-6 h-6 animate-spin text-[#d42b2b]" />
+            <p className="text-sm">Finding nearby services…</p>
+          </div>
+        )}
+        {error && <p className="text-center text-red-600 text-sm px-8 py-10">{error}</p>}
+        {!fetching && !error && visible.length === 0 && (
+          <p className="text-center text-gray-400 text-sm px-8 py-10">
+            {pois.length === 0 ? "No services found within 5 km." : "No services match the selected filters."}
+          </p>
+        )}
+        <div className="divide-y divide-gray-100">
+          {visible.map(poi => {
+            const cat = POI_FILTERS.find(f => f.key === poi.category)!;
+            const CatIcon = cat.Icon;
+            return (
+              <div key={poi.id} className="px-6 py-5 space-y-4">
+                <div className="flex items-start gap-3">
+                  <div
+                    className="w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0"
+                    style={{ backgroundColor: cat.color + "18" }}
+                  >
+                    <CatIcon className="w-5 h-5" style={{ color: cat.color }} />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-semibold text-sm text-gray-900 leading-snug">{poi.name}</p>
+                    <p className="text-xs text-gray-500 mt-0.5 font-medium">{fmtKm(poi.distance)} away</p>
+                    {poi.phone && <p className="text-xs text-gray-500 mt-0.5">{poi.phone}</p>}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  {poi.phone ? (
+                    <a
+                      href={`tel:${poi.phone}`}
+                      className="flex-1 flex items-center justify-center gap-2 bg-[#d42b2b] text-white rounded-xl py-3.5 text-sm font-bold min-h-[56px]"
+                    >
+                      <Phone className="w-4 h-4" />
+                      Call
+                    </a>
+                  ) : (
+                    <div className="flex-1 flex items-center justify-center gap-2 bg-gray-100 text-gray-400 rounded-xl py-3.5 text-sm font-medium min-h-[56px]">
+                      No phone
+                    </div>
+                  )}
+                  <a
+                    href={dirUrl(poi.lat, poi.lng, coords?.lat, coords?.lng)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex-1 flex items-center justify-center gap-2 bg-gray-900 text-white rounded-xl py-3.5 text-sm font-bold min-h-[56px]"
+                  >
+                    <Navigation2 className="w-4 h-4" />
+                    Directions
+                  </a>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </BottomSheet>
+  );
+}
+
+// ─── Emergency Contacts sheet ─────────────────────────────────────────────────
+
+function ContactsSheet({
+  open, onClose, contacts, coords,
+}: {
+  open: boolean; onClose: () => void; contacts: Contact[]; coords: Coords | null;
+}) {
+  const [sent, setSent] = useState<Set<string>>(new Set());
+
+  const smsBody = coords
+    ? `EMERGENCY: I've been in a car crash. My location: https://maps.google.com/?q=${coords.lat},${coords.lng}\nGPS: ${fmtCoords(coords)}\nPlease call me or emergency services.`
+    : "EMERGENCY: I've been in a car crash. Please call me or emergency services immediately.";
+
+  const markSent = (id: string) => {
+    setSent(prev => new Set([...prev, id]));
+    setTimeout(() => setSent(prev => { const n = new Set(prev); n.delete(id); return n; }), 3000);
+  };
+
+  return (
+    <BottomSheet open={open} onClose={onClose} title="Emergency Contacts">
+      <div className="flex-1 overflow-y-auto">
+        {contacts.length === 0 ? (
+          <div className="px-6 py-12 text-center">
+            <div className="w-14 h-14 rounded-full bg-gray-100 flex items-center justify-center mx-auto mb-3">
+              <Users className="w-7 h-7 text-gray-400" />
+            </div>
+            <p className="text-gray-600 font-medium text-sm">No emergency contacts saved</p>
+            <p className="text-gray-400 text-xs mt-1">Add contacts in Settings</p>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100">
+            {contacts.map(c => (
+              <div key={c.id} className="px-6 py-5 space-y-3">
+                <div>
+                  <p className="font-bold text-base text-gray-900">{c.name}</p>
+                  <p className="text-xs text-gray-500 mt-0.5">{c.phone}</p>
+                </div>
+                <div className="flex gap-2">
+                  <a
+                    href={`tel:${c.phone}`}
+                    className="flex-1 flex items-center justify-center gap-2 bg-[#d42b2b] text-white rounded-xl py-4 text-sm font-bold min-h-[56px]"
+                  >
+                    <Phone className="w-4 h-4" />
+                    Call
+                  </a>
+                  <a
+                    href={smsUri(c.phone, smsBody)}
+                    onClick={() => markSent(c.id)}
+                    className={`flex-1 flex items-center justify-center gap-2 rounded-xl py-4 text-sm font-bold min-h-[56px] transition-colors ${
+                      sent.has(c.id) ? "bg-green-600 text-white" : "bg-gray-900 text-white"
+                    }`}
+                  >
+                    {sent.has(c.id) ? <CheckCircle className="w-4 h-4" /> : <Send className="w-4 h-4" />}
+                    {sent.has(c.id) ? "Sent!" : "Send SMS"}
+                  </a>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        {/* SMS content preview */}
+        {contacts.length > 0 && (
+          <div className="px-6 pb-6 pt-2">
+            <p className="text-xs font-bold uppercase tracking-wider text-gray-400 mb-2">SMS preview</p>
+            <div className="bg-gray-50 border border-gray-200 rounded-xl p-3 text-xs text-gray-500 leading-relaxed">
+              {smsBody}
+            </div>
           </div>
         )}
       </div>
-    </div>
+    </BottomSheet>
   );
 }
 
-// ─── Profile Screen ───────────────────────────────────────────────────────────
+// ─── Settings screen ──────────────────────────────────────────────────────────
 
-function ProfileScreen({
-  profile,
-  onChange,
-}: {
-  profile: UserProfile;
-  onChange: (p: UserProfile) => void;
+const EMERGENCY_PRESETS = [
+  { label: "112 — International / EU / Malaysia / India", value: "112" },
+  { label: "911 — USA / Canada / Mexico", value: "911" },
+  { label: "999 — UK / Hong Kong / Bangladesh", value: "999" },
+  { label: "000 — Australia", value: "000" },
+  { label: "111 — New Zealand", value: "111" },
+  { label: "Custom number…", value: "__custom__" },
+];
+
+function SettingsScreen({ profile, onSave, onClose }: {
+  profile: Profile;
+  onSave: (p: Profile) => void;
+  onClose: () => void;
 }) {
+  const isPreset = EMERGENCY_PRESETS.some(p => p.value === profile.emergencyNumber && p.value !== "__custom__");
+  const [local, setLocal] = useState<Profile>(profile);
+  const [numMode, setNumMode] = useState(isPreset ? profile.emergencyNumber : "__custom__");
+  const [customNum, setCustomNum] = useState(isPreset ? "" : profile.emergencyNumber);
   const [newName, setNewName] = useState("");
   const [newPhone, setNewPhone] = useState("");
   const [saved, setSaved] = useState(false);
-  const [openSection, setOpenSection] = useState<"medical" | "contacts" | null>("medical");
 
-  const update = (patch: Partial<UserProfile>) => {
-    const next = { ...profile, ...patch };
-    onChange(next);
-    saveProfile(next);
-  };
-
-  const addContact = () => {
-    if (!newName.trim() || !newPhone.trim()) return;
-    update({
-      contacts: [
-        ...profile.contacts,
-        { id: Date.now().toString(), name: newName.trim(), phone: newPhone.trim() },
-      ],
-    });
-    setNewName("");
-    setNewPhone("");
-  };
-
-  const removeContact = (id: string) =>
-    update({ contacts: profile.contacts.filter((c) => c.id !== id) });
+  const patch = (p: Partial<Profile>) => setLocal(prev => ({ ...prev, ...p }));
 
   const handleSave = () => {
-    saveProfile(profile);
+    const num = numMode === "__custom__" ? customNum.trim() : numMode;
+    const final: Profile = { ...local, emergencyNumber: num || "112" };
+    onSave(final);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
 
-  const toggle = (s: "medical" | "contacts") => setOpenSection((cur) => (cur === s ? null : s));
+  const addContact = () => {
+    if (!newName.trim() || !newPhone.trim()) return;
+    patch({ contacts: [...local.contacts, { id: Date.now().toString(), name: newName.trim(), phone: newPhone.trim() }] });
+    setNewName(""); setNewPhone("");
+  };
+
+  const removeContact = (id: string) => patch({ contacts: local.contacts.filter(c => c.id !== id) });
 
   return (
-    <div className="overflow-y-auto p-4 space-y-3">
-      <h2 className="font-bold text-base">Medical Profile</h2>
-      <p className="text-xs text-muted-foreground -mt-1">
-        Stored locally on this device. Shared with emergency contacts when SOS is triggered.
-      </p>
-
-      <div className="bg-card border border-border rounded-xl overflow-hidden">
-        <button
-          onClick={() => toggle("medical")}
-          className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold"
-        >
-          Personal &amp; Medical Info
-          {openSection === "medical" ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+    <div className="fixed inset-0 z-50 bg-gray-50 flex flex-col" style={{ fontFamily: "Inter, system-ui, sans-serif" }}>
+      <div className="flex items-center gap-3 px-6 pt-12 pb-4 bg-white border-b border-gray-100 flex-shrink-0">
+        <button onClick={onClose} className="w-11 h-11 flex items-center justify-center rounded-full bg-gray-100 flex-shrink-0">
+          <X className="w-5 h-5 text-gray-700" />
         </button>
-        {openSection === "medical" && (
-          <div className="px-4 pb-4 space-y-3 border-t border-border">
-            <div className="space-y-1 pt-3">
-              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Full Name</label>
+        <h1 className="font-bold text-xl flex-1 text-gray-900">Settings</h1>
+        <button
+          onClick={handleSave}
+          className="flex items-center gap-1.5 bg-[#d42b2b] text-white rounded-xl px-5 py-2.5 text-sm font-bold min-h-[44px]"
+        >
+          {saved ? <CheckCircle className="w-4 h-4" /> : null}
+          {saved ? "Saved!" : "Save"}
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto pb-10">
+        {/* Emergency number */}
+        <div className="mt-6 bg-white border-y border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-50">
+            <p className="text-xs font-bold uppercase tracking-widest text-gray-400">Emergency Call Number</p>
+          </div>
+          <div className="px-6 py-4 space-y-3">
+            <select
+              value={numMode}
+              onChange={e => setNumMode(e.target.value)}
+              className="w-full bg-gray-100 rounded-xl px-4 py-3.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#d42b2b]/30 min-h-[56px] appearance-none"
+            >
+              {EMERGENCY_PRESETS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+            </select>
+            {numMode === "__custom__" && (
               <input
-                value={profile.name}
-                onChange={(e) => update({ name: e.target.value })}
-                placeholder="Jane Smith"
-                className="w-full bg-input-background rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                value={customNum}
+                onChange={e => setCustomNum(e.target.value)}
+                placeholder="e.g. 995"
+                className="w-full bg-gray-100 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#d42b2b]/30 min-h-[56px]"
               />
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Blood Group</label>
+            )}
+          </div>
+        </div>
+
+        {/* Medical info */}
+        <div className="mt-6 bg-white border-y border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-50">
+            <p className="text-xs font-bold uppercase tracking-widest text-gray-400">Medical Information</p>
+            <p className="text-xs text-gray-400 mt-0.5">Shared with emergency contacts in SMS alerts</p>
+          </div>
+          <div className="px-6 py-4 space-y-4">
+            <div>
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Blood Group</label>
               <select
-                value={profile.bloodGroup}
-                onChange={(e) => update({ bloodGroup: e.target.value })}
-                className="w-full bg-input-background rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
+                value={local.bloodGroup}
+                onChange={e => patch({ bloodGroup: e.target.value })}
+                className="w-full bg-gray-100 rounded-xl px-4 py-3.5 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-[#d42b2b]/30 mt-2 min-h-[56px] appearance-none"
               >
-                <option value="">Select blood group</option>
-                {["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map((g) => (
-                  <option key={g} value={g}>{g}</option>
-                ))}
+                <option value="">Not set</option>
+                {["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"].map(g => <option key={g} value={g}>{g}</option>)}
               </select>
             </div>
-            <div className="space-y-1">
-              <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Medical Conditions / Allergies
-              </label>
+            <div>
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Medical Conditions</label>
               <textarea
-                value={profile.conditions}
-                onChange={(e) => update({ conditions: e.target.value })}
-                placeholder="e.g. Diabetic, allergic to penicillin, takes blood thinners…"
+                value={local.conditions}
+                onChange={e => patch({ conditions: e.target.value })}
+                placeholder="e.g. Diabetic, hypertension, epilepsy…"
                 rows={3}
-                className="w-full bg-input-background rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 resize-none"
+                className="w-full bg-gray-100 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#d42b2b]/30 resize-none mt-2"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-gray-500 uppercase tracking-wide">Allergies</label>
+              <textarea
+                value={local.allergies}
+                onChange={e => patch({ allergies: e.target.value })}
+                placeholder="e.g. Penicillin, NSAIDs, latex, shellfish…"
+                rows={2}
+                className="w-full bg-gray-100 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#d42b2b]/30 resize-none mt-2"
               />
             </div>
           </div>
-        )}
-      </div>
+        </div>
 
-      <div className="bg-card border border-border rounded-xl overflow-hidden">
-        <button
-          onClick={() => toggle("contacts")}
-          className="w-full flex items-center justify-between px-4 py-3 text-sm font-semibold"
-        >
-          Emergency Contacts
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground font-normal">{profile.contacts.length} saved</span>
-            {openSection === "contacts" ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+        {/* Contacts */}
+        <div className="mt-6 bg-white border-y border-gray-100">
+          <div className="px-6 py-4 border-b border-gray-50">
+            <p className="text-xs font-bold uppercase tracking-widest text-gray-400">Emergency Contacts</p>
           </div>
-        </button>
-        {openSection === "contacts" && (
-          <div className="px-4 pb-4 space-y-3 border-t border-border">
-            <div className="pt-3 space-y-2">
-              {profile.contacts.map((c) => (
-                <div key={c.id} className="flex items-center gap-3 bg-secondary rounded-xl px-3 py-2.5">
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-medium truncate">{c.name}</div>
-                    <div className="text-xs text-muted-foreground">{c.phone}</div>
-                  </div>
-                  <button
-                    onClick={() => removeContact(c.id)}
-                    className="text-muted-foreground hover:text-primary transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+          <div className="divide-y divide-gray-50">
+            {local.contacts.map(c => (
+              <div key={c.id} className="flex items-center px-6 py-4 gap-3 min-h-[64px]">
+                <div className="w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                  <Users className="w-4 h-4 text-gray-500" />
                 </div>
-              ))}
-            </div>
-            <div className="space-y-2">
-              <input
-                value={newName}
-                onChange={(e) => setNewName(e.target.value)}
-                placeholder="Contact name"
-                className="w-full bg-input-background rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-              <input
-                value={newPhone}
-                onChange={(e) => setNewPhone(e.target.value)}
-                placeholder="+1 234 567 8900 (with country code)"
-                className="w-full bg-input-background rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-              <button
-                onClick={addContact}
-                disabled={!newName.trim() || !newPhone.trim()}
-                className="w-full flex items-center justify-center gap-2 bg-secondary text-foreground border border-border rounded-lg py-2.5 text-sm font-medium disabled:opacity-40 hover:bg-muted transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                Add Contact
-              </button>
-            </div>
+                <div className="flex-1 min-w-0">
+                  <p className="font-semibold text-sm text-gray-900">{c.name}</p>
+                  <p className="text-xs text-gray-500">{c.phone}</p>
+                </div>
+                <button
+                  onClick={() => removeContact(c.id)}
+                  className="w-11 h-11 flex items-center justify-center rounded-full bg-red-50 text-red-500 flex-shrink-0"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
+            ))}
           </div>
-        )}
+          <div className="px-6 py-4 space-y-3 border-t border-gray-50">
+            <input
+              value={newName}
+              onChange={e => setNewName(e.target.value)}
+              placeholder="Contact name"
+              className="w-full bg-gray-100 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#d42b2b]/30 min-h-[56px]"
+            />
+            <input
+              value={newPhone}
+              onChange={e => setNewPhone(e.target.value)}
+              placeholder="+60 12 345 6789 (include country code)"
+              className="w-full bg-gray-100 rounded-xl px-4 py-3.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#d42b2b]/30 min-h-[56px]"
+            />
+            <button
+              onClick={addContact}
+              disabled={!newName.trim() || !newPhone.trim()}
+              className="w-full flex items-center justify-center gap-2 bg-gray-900 text-white rounded-xl py-3.5 text-sm font-bold min-h-[56px] disabled:opacity-40"
+            >
+              <Plus className="w-4 h-4" />
+              Add Contact
+            </button>
+          </div>
+        </div>
       </div>
-
-      <button
-        onClick={handleSave}
-        className="w-full bg-primary text-white rounded-xl py-3.5 font-semibold text-sm flex items-center justify-center gap-2"
-      >
-        {saved && <CheckCircle className="w-4 h-4" />}
-        {saved ? "Saved!" : "Save Profile"}
-      </button>
-
-      <p className="text-xs text-center text-muted-foreground pb-4">
-        SMS alerts via Twilio — configure your backend with{" "}
-        <code className="bg-secondary px-1 rounded">TWILIO_SID</code>,{" "}
-        <code className="bg-secondary px-1 rounded">TWILIO_TOKEN</code>, and{" "}
-        <code className="bg-secondary px-1 rounded">TWILIO_FROM</code>.
-      </p>
     </div>
   );
 }
 
-// ─── App Shell ────────────────────────────────────────────────────────────────
+// ─── Main screen ──────────────────────────────────────────────────────────────
+
+function MainScreen({
+  profile, coords, areaName, gpsLoading,
+  onRefreshGPS, onOpenChat, onOpenNearby, onOpenContacts, onOpenSettings,
+}: {
+  profile: Profile;
+  coords: Coords | null;
+  areaName: string;
+  gpsLoading: boolean;
+  onRefreshGPS: () => void;
+  onOpenChat: () => void;
+  onOpenNearby: () => void;
+  onOpenContacts: () => void;
+  onOpenSettings: () => void;
+}) {
+  const medInfo = [profile.conditions, profile.allergies].filter(Boolean).join(" · ");
+
+  return (
+    <div className="flex flex-col h-full bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-100 px-6 pt-12 pb-5 flex-shrink-0">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex-1 min-w-0">
+            <h1 className="text-3xl font-black tracking-tight text-gray-900">CrashSafe</h1>
+            {/* Medical summary */}
+            {(profile.bloodGroup || medInfo) ? (
+              <div className="flex flex-wrap items-center gap-2 mt-2">
+                {profile.bloodGroup && (
+                  <span className="inline-flex items-center gap-1 text-xs font-bold text-[#d42b2b] bg-red-50 border border-red-100 px-2.5 py-1 rounded-full">
+                    🩸 {profile.bloodGroup}
+                  </span>
+                )}
+                {medInfo && (
+                  <span className="text-xs text-gray-500 leading-relaxed">{medInfo}</span>
+                )}
+              </div>
+            ) : (
+              <p className="text-xs text-amber-600 font-semibold mt-1.5">
+                ⚠️ Add medical info in Settings
+              </p>
+            )}
+          </div>
+          <button
+            onClick={onOpenSettings}
+            className="w-11 h-11 flex items-center justify-center rounded-full bg-gray-100 flex-shrink-0"
+          >
+            <Settings className="w-5 h-5 text-gray-600" />
+          </button>
+        </div>
+
+        {/* GPS location */}
+        <div className="mt-4 flex items-center gap-2.5">
+          <MapPin className="w-4 h-4 text-[#d42b2b] flex-shrink-0" />
+          <div className="flex-1 min-w-0">
+            {gpsLoading ? (
+              <div className="flex items-center gap-1.5 text-xs text-gray-400">
+                <Loader className="w-3.5 h-3.5 animate-spin" />
+                Locating…
+              </div>
+            ) : coords ? (
+              <>
+                {areaName && <p className="text-sm font-semibold text-gray-800 truncate">{areaName}</p>}
+                <p className="text-xs text-gray-400 font-mono mt-0.5">{fmtCoords(coords)}</p>
+              </>
+            ) : (
+              <p className="text-xs text-gray-400">Location unavailable — tap refresh</p>
+            )}
+          </div>
+          <button
+            onClick={onRefreshGPS}
+            className="w-9 h-9 flex items-center justify-center rounded-full bg-gray-100 flex-shrink-0"
+          >
+            <RefreshCw className={`w-4 h-4 text-gray-500 ${gpsLoading ? "animate-spin" : ""}`} />
+          </button>
+        </div>
+      </div>
+
+      {/* Action buttons */}
+      <div className="flex-1 overflow-y-auto px-6 py-6 space-y-3">
+        {/* Call emergency number — primary, dominant */}
+        <a
+          href={`tel:${profile.emergencyNumber}`}
+          className="flex items-center justify-center gap-4 w-full bg-[#d42b2b] text-white rounded-2xl min-h-[88px] font-black text-2xl shadow-lg active:scale-[0.98] transition-transform select-none"
+          style={{ boxShadow: "0 4px 24px rgba(212,43,43,0.30)" }}
+        >
+          <Phone className="w-8 h-8" strokeWidth={2.5} />
+          Call {profile.emergencyNumber}
+        </a>
+
+        {/* 2-column row */}
+        <div className="grid grid-cols-2 gap-3">
+          <button
+            onClick={onOpenChat}
+            className="flex flex-col items-center justify-center gap-2.5 bg-[#1e293b] text-white rounded-2xl min-h-[108px] px-4 active:scale-[0.97] transition-transform"
+          >
+            <div className="w-11 h-11 rounded-full bg-white/15 flex items-center justify-center">
+              <MessageSquare className="w-5 h-5" />
+            </div>
+            <span className="text-sm font-bold text-center leading-tight">First Aid Guide</span>
+          </button>
+          <button
+            onClick={onOpenNearby}
+            className="flex flex-col items-center justify-center gap-2.5 bg-[#1e3a5f] text-white rounded-2xl min-h-[108px] px-4 active:scale-[0.97] transition-transform"
+          >
+            <div className="w-11 h-11 rounded-full bg-white/15 flex items-center justify-center">
+              <MapPin className="w-5 h-5" />
+            </div>
+            <span className="text-sm font-bold text-center leading-tight">Nearby Services</span>
+          </button>
+        </div>
+
+        {/* Emergency contacts — full width */}
+        <button
+          onClick={onOpenContacts}
+          className="flex items-center gap-4 w-full bg-[#14532d] text-white rounded-2xl px-6 min-h-[72px] active:scale-[0.98] transition-transform"
+        >
+          <div className="w-11 h-11 rounded-full bg-white/15 flex items-center justify-center flex-shrink-0">
+            <Users className="w-5 h-5" />
+          </div>
+          <div className="text-left flex-1">
+            <p className="font-bold text-base leading-tight">Emergency Contacts</p>
+            <p className="text-xs text-white/60 mt-0.5">
+              {profile.contacts.length > 0
+                ? `${profile.contacts.length} contact${profile.contacts.length !== 1 ? "s" : ""} — tap to call or SMS`
+                : "No contacts saved"}
+            </p>
+          </div>
+          <ChevronRight className="w-5 h-5 text-white/40 flex-shrink-0" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ─── Root ─────────────────────────────────────────────────────────────────────
 
 export default function App() {
-  const [tab, setTab] = useState<Tab>("sos");
-  const [profile, setProfile] = useState<UserProfile>(loadProfile);
+  const [profile, setProfile] = useState<Profile>(loadProfile);
+  const [coords, setCoords] = useState<Coords | null>(null);
+  const [areaName, setAreaName] = useState("");
+  const [gpsLoading, setGpsLoading] = useState(false);
+  const [settings, setSettings] = useState(false);
+  const [sheet, setSheet] = useState<"chat" | "nearby" | "contacts" | null>(null);
 
-  const tabs: { key: Tab; label: string; Icon: any }[] = [
-    { key: "sos",     label: "SOS",     Icon: AlertTriangle  },
-    { key: "chat",    label: "Guide",   Icon: MessageSquare  },
-    { key: "map",     label: "Map",     Icon: Map            },
-    { key: "profile", label: "Profile", Icon: User           },
-  ];
+  const fetchGPS = useCallback(() => {
+    if (!navigator.geolocation) return;
+    setGpsLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      async pos => {
+        const c = { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: pos.coords.accuracy };
+        setCoords(c);
+        reverseGeocode(c.lat, c.lng).then(setAreaName);
+        setGpsLoading(false);
+      },
+      () => setGpsLoading(false),
+      { enableHighAccuracy: true }
+    );
+  }, []);
+
+  useEffect(() => { fetchGPS(); }, [fetchGPS]);
+
+  const handleProfileSave = (p: Profile) => { setProfile(p); saveProfile(p); };
 
   return (
     <div
-      className="flex flex-col bg-background"
+      className="bg-gray-50 overflow-hidden relative"
       style={{ height: "100dvh", maxWidth: 430, margin: "0 auto", fontFamily: "Inter, system-ui, sans-serif" }}
     >
-      {/* Header */}
-      <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-card flex-shrink-0">
-        <div className="w-6 h-6 bg-primary rounded flex items-center justify-center">
-          <AlertTriangle className="w-3.5 h-3.5 text-white" strokeWidth={2.5} />
-        </div>
-        <span className="font-bold text-sm tracking-tight">CrashGuard</span>
-        {profile.name && (
-          <span className="ml-auto text-xs text-muted-foreground">{profile.name}</span>
-        )}
-        {profile.bloodGroup && (
-          <span className="text-xs font-bold bg-primary/10 text-primary px-2 py-0.5 rounded-full">
-            {profile.bloodGroup}
-          </span>
-        )}
-      </div>
+      <MainScreen
+        profile={profile}
+        coords={coords}
+        areaName={areaName}
+        gpsLoading={gpsLoading}
+        onRefreshGPS={fetchGPS}
+        onOpenChat={() => setSheet("chat")}
+        onOpenNearby={() => setSheet("nearby")}
+        onOpenContacts={() => setSheet("contacts")}
+        onOpenSettings={() => setSettings(true)}
+      />
 
-      {/* Content — keep all tabs mounted so map doesn't re-init on tab switch */}
-      <div className="flex-1 overflow-hidden relative">
-        <div className={`absolute inset-0 overflow-y-auto ${tab !== "sos" ? "hidden" : ""}`}>
-          <SOSScreen profile={profile} />
-        </div>
-        <div className={`absolute inset-0 flex flex-col ${tab !== "chat" ? "hidden" : ""}`}>
-          <ChatScreen />
-        </div>
-        <div className={`absolute inset-0 flex flex-col ${tab !== "map" ? "hidden" : ""}`}>
-          <MapScreen />
-        </div>
-        <div className={`absolute inset-0 overflow-y-auto ${tab !== "profile" ? "hidden" : ""}`}>
-          <ProfileScreen profile={profile} onChange={setProfile} />
-        </div>
-      </div>
+      <ChatOverlay open={sheet === "chat"} onClose={() => setSheet(null)} />
+      <NearbySheet open={sheet === "nearby"} onClose={() => setSheet(null)} coords={coords} />
+      <ContactsSheet open={sheet === "contacts"} onClose={() => setSheet(null)} contacts={profile.contacts} coords={coords} />
 
-      {/* Bottom nav */}
-      <div className="border-t border-border bg-card flex-shrink-0">
-        <div className="flex">
-          {tabs.map(({ key, label, Icon }) => (
-            <button
-              key={key}
-              onClick={() => setTab(key)}
-              className={`flex-1 flex flex-col items-center gap-1 py-3 transition-colors ${
-                tab === key ? "text-primary" : "text-muted-foreground"
-              }`}
-            >
-              <Icon className="w-5 h-5" strokeWidth={tab === key ? 2.5 : 1.75} />
-              <span className="text-xs font-medium">{label}</span>
-              {tab === key && <span className="w-1 h-1 rounded-full bg-primary" />}
-            </button>
-          ))}
-        </div>
-      </div>
+      {settings && (
+        <SettingsScreen
+          profile={profile}
+          onSave={p => { handleProfileSave(p); }}
+          onClose={() => setSettings(false)}
+        />
+      )}
     </div>
   );
 }
