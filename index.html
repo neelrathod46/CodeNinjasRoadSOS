@@ -1,18 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>CrashSafe</title>
 
-  <!DOCTYPE html>
-  <html lang="en">
-    <head>
-      <script src="https://cdn.botpress.cloud/webchat/v3.6/inject.js"></script>
-      <script src="https://files.bpcontent.cloud/2026/05/22/16/20260522165012-7KUKGH49.js" defer></script>
-      <meta charset="UTF-8" />
-      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-      <title>Emergency Assistance PWA</title>
-      <style>html, body { height: 100%; margin: 0; } #root { height: 100%; }</style>
-    </head>
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#E8192C">
 
-    <body>
-      <div id="root"></div>
-      <script type="module" src="/src/main.tsx"></script>
-    </body>
-  </html>
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
   
+  <div id="app">
+    <div id="screen-home" class="screen active"></div>
+    <div id="screen-sos" class="screen"></div>
+    <div id="screen-nearby" class="screen"></div>
+    <div id="screen-medical" class="screen"></div>
+    <div id="screen-contacts" class="screen"></div>
+    <div id="screen-settings" class="screen"></div>
+    <div id="screen-chat" class="screen"></div>
+  </div>
+
+  <script src="js/storage.js"></script>
+  <script src="js/geolocation.js"></script>
+  <script src="js/crash-detection.js"></script>
+  <script src="js/nearby-services.js"></script>
+  <script src="js/app.js"></script>
+  
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js')
+          .then(reg => console.log('Service Worker Registered:', reg.scope))
+          .catch(err => console.warn('Service Worker Registration failed:', err));
+      });
+    }
+  </script>
+</body>
+</html>
