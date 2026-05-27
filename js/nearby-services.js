@@ -14,30 +14,51 @@ const NearbyServices = {
       out body;
     `;
     try {
+      // 1. Fetch places from Overpass
       const res = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`);
       const json = await res.json();
-      
-      const services = json.elements.map(el => {
-        const itemDist = this._dist(lat, lng, el.lat, el.lon);
-        
+
+      // dist is stored in METRES throughout so sorting is always consistent.
+      // _haversineMetres() returns metres; sort and take top 20 before OSRM call.
+      let services = json.elements.map(el => {
+        const distM = this._haversineMetres(lat, lng, el.lat, el.lon);
         return {
           id: el.id,
           name: el.tags.name || this._typeLabel(el.tags),
           type: this._type(el.tags),
           phone: el.tags.phone || el.tags['contact:phone'] || null,
           lat: el.lat,
-          lng: el.lon, // Stored as lng
-          dist: itemDist,
-          distLabel: itemDist < 1 ? `${Math.round(itemDist * 1000)}m` : `${itemDist.toFixed(1)}km`
+          lng: el.lon,
+          dist: distM,           // always metres
+          distLabel: this._metresToLabel(distM)
         };
-      }).sort((a, b) => a.dist - b.dist);
-      
+      }).sort((a, b) => a.dist - b.dist).slice(0, 20);
+
+      // 2. Refine with road distances from OSRM table API (durations in seconds)
+      try {
+        const coords = [`${lng},${lat}`, ...services.map(s => `${s.lng},${s.lat}`)].join(';');
+        const osrmRes = await fetch(`https://router.project-osrm.org/table/v1/driving/${coords}?sources=0`);
+        const osrmJson = await osrmRes.json();
+
+        if (osrmJson.code === 'Ok' && osrmJson.durations?.[0]) {
+          const durations = osrmJson.durations[0]; // seconds from user to each dest
+          services = services.map((s, i) => {
+            const secs = durations[i + 1]; // +1 skips index 0 (user's own location)
+            if (secs == null) return s; // keep straight-line metres + label already set
+            // Estimate road distance: assume avg 40 km/h in urban area
+            const metres = secs * (40000 / 3600);
+            return { ...s, dist: metres, distLabel: this._metresToLabel(metres) };
+          }).sort((a, b) => a.dist - b.dist);
+        }
+        // If OSRM response is not Ok, services already have straight-line labels — nothing to do.
+      } catch {
+        // OSRM unavailable — straight-line labels already set above, keep them.
+      }
+
       Storage.setCachedServices(services);
       return services;
-    } catch (err) {
-      console.warn("Overpass fetch failed, pulling from local cache...", err);
+    } catch {
       const cached = Storage.getCachedServices();
-      // Returns the internal data array from your storage wrapper if it exists
       return cached ? cached.data : [];
     }
   },
@@ -55,14 +76,26 @@ const NearbyServices = {
     if (tags.amenity === 'police') return 'Police Station';
     if (tags.shop === 'car_repair') return 'Car Repair Shop';
     if (tags.shop === 'tyres') return 'Tyre Shop';
+    if (tags.amenity === 'car_rental') return 'Car Rental';
     return 'Service';
   },
 
-  _dist(lat1, lng1, lat2, lng2) {
-    const R = 6371;
-    const dLat = (lat2 - lat1) * Math.PI / 180;
-    const dLng = (lng2 - lng1) * Math.PI / 180;
-    const a = Math.sin(dLat/2)**2 + Math.cos(lat1 * Math.PI/180) * Math.cos(lat2 * Math.PI/180) * Math.sin(dLng/2)**2;
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  // Returns distance in METRES (Haversine formula)
+  _haversineMetres(lat1, lng1, lat2, lng2) {
+    const R = 6_371_000; // Earth radius in metres
+    const toRad = deg => deg * Math.PI / 180;
+    const dLat = toRad(lat2 - lat1);
+    const dLng = toRad(lng2 - lng1);
+    const a =
+      Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng / 2) ** 2;
+    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  },
+
+  // Formats a distance in metres to a human-readable label
+  _metresToLabel(metres) {
+    return metres < 1000
+      ? `${Math.round(metres)}m`
+      : `${(metres / 1000).toFixed(1)}km`;
   }
 };
