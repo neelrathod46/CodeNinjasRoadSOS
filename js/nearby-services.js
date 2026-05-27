@@ -1,66 +1,82 @@
 const NearbyServices = {
+  _OVERPASS_ENDPOINTS: [
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter',
+    'https://overpass.private.coffee/api/interpreter'
+  ],
+
   async fetch(lat, lng) {
     const radius = 5000;
-    const query = `
-      [out:json][timeout:10];
-      (
-        node["amenity"="hospital"](around:${radius},${lat},${lng});
-        node["amenity"="police"](around:${radius},${lat},${lng});
-        node["amenity"="clinic"](around:${radius},${lat},${lng});
-        node["shop"="car_repair"](around:${radius},${lat},${lng});
-        node["shop"="tyres"](around:${radius},${lat},${lng});
-        node["amenity"="car_rental"](around:${radius},${lat},${lng});
-      );
-      out body;
-    `;
-    try {
-      // 1. Fetch places from Overpass
-      const res = await fetch(`https://overpass-api.de/api/interpreter?data=${encodeURIComponent(query)}`);
-      const json = await res.json();
 
-      // dist is stored in METRES throughout so sorting is always consistent.
-      // _haversineMetres() returns metres; sort and take top 20 before OSRM call.
-      let services = json.elements.map(el => {
-        const distM = this._haversineMetres(lat, lng, el.lat, el.lon);
+    const query = `
+      [out:json][timeout:15];
+      (
+        nwr["amenity"="hospital"](around:${radius},${lat},${lng});
+        nwr["amenity"="police"](around:${radius},${lat},${lng});
+        nwr["amenity"="clinic"](around:${radius},${lat},${lng});
+        nwr["shop"="car_repair"](around:${radius},${lat},${lng});
+        nwr["shop"="tyres"](around:${radius},${lat},${lng});
+        nwr["amenity"="car_rental"](around:${radius},${lat},${lng});
+      );
+      out center;
+    `;
+
+    try {
+      const json = await this._fetchOverpass(query);
+
+      const services = json.elements.map(el => {
+        const plat = el.lat ?? el.center?.lat;
+        const plng = el.lon ?? el.center?.lon;
+        if (plat == null || plng == null) return null;
+
+        const distM = this._haversineMetres(lat, lng, plat, plng);
         return {
           id: el.id,
-          name: el.tags.name || this._typeLabel(el.tags),
-          type: this._type(el.tags),
-          phone: el.tags.phone || el.tags['contact:phone'] || null,
-          lat: el.lat,
-          lng: el.lon,
-          dist: distM,           // always metres
+          name: el.tags?.name || this._typeLabel(el.tags || {}),
+          type: this._type(el.tags || {}),
+          phone: el.tags?.phone || el.tags?.['contact:phone'] || null,
+          lat: plat,
+          lng: plng,
+          dist: distM,
           distLabel: this._metresToLabel(distM)
         };
-      }).sort((a, b) => a.dist - b.dist).slice(0, 20);
-
-      // 2. Refine with road distances from OSRM table API (durations in seconds)
-      try {
-        const coords = [`${lng},${lat}`, ...services.map(s => `${s.lng},${s.lat}`)].join(';');
-        const osrmRes = await fetch(`https://router.project-osrm.org/table/v1/driving/${coords}?sources=0`);
-        const osrmJson = await osrmRes.json();
-
-        if (osrmJson.code === 'Ok' && osrmJson.durations?.[0]) {
-          const durations = osrmJson.durations[0]; // seconds from user to each dest
-          services = services.map((s, i) => {
-            const secs = durations[i + 1]; // +1 skips index 0 (user's own location)
-            if (secs == null) return s; // keep straight-line metres + label already set
-            // Estimate road distance: assume avg 40 km/h in urban area
-            const metres = secs * (40000 / 3600);
-            return { ...s, dist: metres, distLabel: this._metresToLabel(metres) };
-          }).sort((a, b) => a.dist - b.dist);
-        }
-        // If OSRM response is not Ok, services already have straight-line labels — nothing to do.
-      } catch {
-        // OSRM unavailable — straight-line labels already set above, keep them.
-      }
+      })
+      .filter(Boolean)
+      .sort((a, b) => a.dist - b.dist)
+      .slice(0, 25);
 
       Storage.setCachedServices(services);
       return services;
+
     } catch {
       const cached = Storage.getCachedServices();
       return cached ? cached.data : [];
     }
+  },
+
+  // Tries each Overpass mirror in order using POST (correct method for complex queries)
+  async _fetchOverpass(query) {
+    let lastError;
+    for (const endpoint of this._OVERPASS_ENDPOINTS) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 15000);
+      try {
+        const res = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: `data=${encodeURIComponent(query)}`,
+          signal: controller.signal
+        });
+        clearTimeout(timer);
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        return await res.json();
+      } catch (err) {
+        clearTimeout(timer);
+        lastError = err;
+        // Try next mirror
+      }
+    }
+    throw lastError;
   },
 
   _type(tags) {
@@ -82,7 +98,7 @@ const NearbyServices = {
 
   // Returns distance in METRES (Haversine formula)
   _haversineMetres(lat1, lng1, lat2, lng2) {
-    const R = 6_371_000; // Earth radius in metres
+    const R = 6_371_000;
     const toRad = deg => deg * Math.PI / 180;
     const dLat = toRad(lat2 - lat1);
     const dLng = toRad(lng2 - lng1);
@@ -92,7 +108,6 @@ const NearbyServices = {
     return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   },
 
-  // Formats a distance in metres to a human-readable label
   _metresToLabel(metres) {
     return metres < 1000
       ? `${Math.round(metres)}m`

@@ -23,7 +23,7 @@ const Geo = {
         }
 
         Storage.setLocation(lat, lng, areaName);
-        this._updateUI(areaName);
+        this._updateUI(areaName, lat, lng);
       },
       err => console.warn('GPS error:', err),
       { enableHighAccuracy: true, maximumAge: 30000 }
@@ -34,10 +34,13 @@ const Geo = {
     return this.current || Storage.getLocation();
   },
 
-  _updateUI(areaName) {
+  _updateUI(areaName, lat, lng) {
+    const coords = (lat != null && lng != null)
+      ? `${lat.toFixed(4)}, ${lng.toFixed(4)}`
+      : null;
     const el = document.getElementById('gps-status');
     const elHome = document.getElementById('gps-address');
-    if (el) el.textContent = areaName;
-    if (elHome) elHome.textContent = `Location: ${areaName}`;
+    if (el) el.textContent = coords ? `${areaName} · ${coords}` : areaName;
+    if (elHome) elHome.textContent = coords ? `${areaName} · ${coords}` : areaName;
   }
 };
