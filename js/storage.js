@@ -11,6 +11,11 @@ const Storage = {
   getContacts() {
     return this.get('contacts') || [];
   },
+  addContact(name, contactNo) {
+    const contacts = this.getContacts();
+    contacts.push({ name: name, 'contact no.': contactNo });
+    this.set('contacts', contacts);
+  },
   getSettings() {
     return this.get('settings') || { sosNumber: '911', countdownSecs: 10, detectionOn: true, sensitivity: 25 };
   },
